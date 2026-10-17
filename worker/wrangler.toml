@@ -1,0 +1,26 @@
+name = "assay-verify-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Where valid requests are forwarded. Required. Scheme and host, optional path prefix.
+ORIGIN_URL = "https://origin.example.com"
+# Optional: use a different key set, for example testnet:
+# JWKS_URL = "https://api-dev.goassay.ai/.well-known/assay-request-keys.json"
+
+# Optional secret header the Worker adds so your origin can accept only the Worker.
+# Set it with: npx wrangler secret put ORIGIN_SECRET
+# The value is sent as the "x-assay-origin-secret" header.
+
+# Optional replay protection that works across all Worker instances.
+# Without it, replays are only caught inside one Worker isolate (best effort).
+# The Durable Object adds one extra round trip per request, so set locationHint
+# NONCE_LOCATION_HINT (for example "enam", "weur", "apac") to a region close to your origin. Uncomment all three blocks to enable.
+#
+# [[durable_objects.bindings]]
+# name = "NONCE_STORE"
+# class_name = "NonceStore"
+#
+# [[migrations]]
+# tag = "v1"
+# new_sqlite_classes = ["NonceStore"]

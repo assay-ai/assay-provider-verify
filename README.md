@@ -22,8 +22,15 @@ Keys are fetched automatically from:
 
 A rejected request gets `401` with body `{"error":"invalid_assay_signature","reason":"<CODE>"}`.
 
+## Deploy without code
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/assay-ai/assay-provider-verify/tree/main/worker)
+
+The button works once this repository is public. Steps: [docs/level-0-cloudflare-worker.md](docs/level-0-cloudflare-worker.md).
+
 ## Documentation
 
+- [docs/level-0-cloudflare-worker.md](docs/level-0-cloudflare-worker.md): the zero-code Cloudflare Worker.
 - [docs/overview.md](docs/overview.md): how the signature works, the verification steps, reason codes and the test vectors.
 
 ## Test vectors
