@@ -46,10 +46,14 @@ describe("JWKS cache", () => {
 
   it("fetch failure gives UNKNOWN_KEY and recovers later", async () => {
     let fail = true;
+    let now = c1.params.created;
     const f = vi.fn(async () => { if (fail) throw new Error("down"); return new Response(JSON.stringify({ keys: [v1.publicKeyJwk] })); });
-    const verify = createVerifier({ fetch: f as any, now: () => c1.params.created });
+    const verify = createVerifier({ fetch: f as any, now: () => now });
     expect(await verify(inputOf(c1))).toEqual({ ok: false, reason: "UNKNOWN_KEY" });
     fail = false;
+    expect(await verify(inputOf(c1))).toEqual({ ok: false, reason: "UNKNOWN_KEY" }); // inside 5s backoff
+    expect(f).toHaveBeenCalledTimes(1);
+    now += 6;
     expect((await verify(inputOf(c1))).ok).toBe(true);
   });
 

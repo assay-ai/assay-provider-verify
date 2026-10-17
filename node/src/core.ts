@@ -1,4 +1,4 @@
-import { JwksCache } from "./jwks.js";
+import { JwksCache, resolveJwksUrl } from "./jwks.js";
 import { MemoryReplayStore, type ReplayStore } from "./replay.js";
 import { parseDictionary, ParseError, type Member } from "./structured.js";
 
@@ -77,16 +77,39 @@ function strParam(m: Member, name: string): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
 
+const ABSOLUTE = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/**
+ * Splits the request target. Absolute URLs use the URL parser (and supply a
+ * fallback authority); anything else is taken as sent, never resolved.
+ */
+function parseTarget(url: string): { path: string; query: string; host?: string } | undefined {
+  if (url.startsWith("//")) return undefined;
+  if (ABSOLUTE.test(url)) {
+    try {
+      const u = new URL(url);
+      if (u.pathname.startsWith("//")) return undefined;
+      return { path: u.pathname || "/", query: u.search.replace(/^\?/, ""), host: u.host.toLowerCase() };
+    } catch {
+      return undefined;
+    }
+  }
+  if (!url.startsWith("/")) return undefined;
+  const noFrag = url.split("#", 1)[0]!;
+  const q = noFrag.indexOf("?");
+  return q < 0 ? { path: noFrag, query: "" } : { path: noFrag.slice(0, q), query: noFrag.slice(q + 1) };
+}
+
 /**
  * Authority rule: the `authority` option wins; else the Host header
  * (lowercased); else, when the request carries no Host header, the host of the
- * request URL (lowercase, port only when not the scheme default).
+ * absolute request URL (lowercase, port only when not the scheme default).
  */
-function resolveAuthority(input: VerifyInput, override: string | undefined, parsed: URL): string {
+function resolveAuthority(input: VerifyInput, override: string | undefined, urlHost: string | undefined): string | undefined {
   if (override) return override.toLowerCase();
   const host = getHeader(input.headers, "host");
   if (host) return host.trim().toLowerCase();
-  return parsed.host.toLowerCase();
+  return urlHost;
 }
 
 async function verifyOnce(
@@ -160,24 +183,22 @@ async function verifyOnce(
   // 4. Time window.
   const skew = options.clockSkewSeconds ?? 60;
   const t = now();
-  if (expires - created > MAX_VALIDITY_SECONDS || t < created - skew || t > expires + skew) {
+  if (expires < created || expires - created > MAX_VALIDITY_SECONDS || t < created - skew || t > expires + skew) {
     return reject("EXPIRED");
   }
 
   // 5. Signature base.
   const callId = getHeader(input.headers, "x-assay-call-id")?.trim();
   if (!callId) return reject("MALFORMED");
-  let parsed: URL;
-  try {
-    parsed = new URL(input.url, "http://placeholder.invalid");
-  } catch {
-    return reject("MALFORMED");
-  }
+  const target = parseTarget(input.url);
+  if (!target) return reject("MALFORMED");
+  const authority = resolveAuthority(input, options.authority, target.host);
+  if (!authority) return reject("MALFORMED");
   const lines = [
     `"@method": ${input.method.toUpperCase()}`,
-    `"@authority": ${resolveAuthority(input, options.authority, parsed)}`,
-    `"@path": ${parsed.pathname || "/"}`,
-    `"@query": ?${parsed.search.replace(/^\?/, "")}`,
+    `"@authority": ${authority}`,
+    `"@path": ${target.path || "/"}`,
+    `"@query": ?${target.query}`,
   ];
   if (digestValue !== undefined) lines.push(`"content-digest": ${digestValue}`);
   lines.push(`"x-assay-call-id": ${callId}`);
@@ -185,7 +206,7 @@ async function verifyOnce(
   const base = enc.encode(lines.join("\n"));
 
   // 6. Key lookup and signature.
-  const key = await jwks.getKey(keyid);
+  const key = await jwks.getKey(keyid, t);
   if (!key) return reject("UNKNOWN_KEY");
   let valid = false;
   try {
@@ -202,33 +223,54 @@ async function verifyOnce(
   return { ok: true, keyId: keyid, callId };
 }
 
-/** Builds a verifier that shares one JWKS cache and one replay store across calls. */
-export function createVerifier(options: VerifyOptions = {}): (input: VerifyInput) => Promise<VerifyResult> {
+type Verifier = (input: VerifyInput) => Promise<VerifyResult>;
+
+function build(options: VerifyOptions, jwks: JwksCache, replay: ReplayStore): Verifier {
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
-  const replay = options.replayStore ?? new MemoryReplayStore();
-  const jwks = new JwksCache({
-    jwksUrl: options.jwksUrl,
-    environment: options.environment,
-    jwks: options.jwks,
-    fetch: options.fetch,
-    now,
-  });
   return (input) => verifyOnce(input, options, jwks, replay, now);
 }
 
-const verifiers = new WeakMap<object, (input: VerifyInput) => Promise<VerifyResult>>();
-let defaultVerifier: ((input: VerifyInput) => Promise<VerifyResult>) | undefined;
+function newCache(options: VerifyOptions): JwksCache {
+  return new JwksCache({ jwksUrl: options.jwksUrl, environment: options.environment, jwks: options.jwks, fetch: options.fetch });
+}
+
+/** Builds a verifier that owns one JWKS cache and one replay store (unless given). */
+export function createVerifier(options: VerifyOptions = {}): Verifier {
+  return build(options, newCache(options), options.replayStore ?? new MemoryReplayStore());
+}
+
+// One-shot helper state: a process-wide default replay store, and JWKS caches
+// shared per resolved URL (per fetch function when a custom one is given; per
+// key-set object for static keys).
+const sharedReplay = new MemoryReplayStore();
+const urlCaches = new Map<string, JwksCache>();
+const customFetchCaches = new WeakMap<object, Map<string, JwksCache>>();
+const staticCaches = new WeakMap<object, JwksCache>();
+
+function sharedCache(options: VerifyOptions): JwksCache {
+  if (options.jwks) {
+    let c = staticCaches.get(options.jwks);
+    if (!c) staticCaches.set(options.jwks, (c = newCache(options)));
+    return c;
+  }
+  const url = resolveJwksUrl(options);
+  let map = urlCaches;
+  if (options.fetch) {
+    let m = customFetchCaches.get(options.fetch);
+    if (!m) customFetchCaches.set(options.fetch, (m = new Map()));
+    map = m;
+  }
+  let c = map.get(url);
+  if (!c) map.set(url, (c = newCache(options)));
+  return c;
+}
 
 /**
- * One-shot helper. Verifiers are memoised per options object (and one default
- * for no options), so JWKS cache and replay store persist across calls as long
- * as the same options object is passed.
+ * One-shot helper. Replay protection (unless a replayStore is passed) and JWKS
+ * caches are shared process-wide, so fresh options objects per call are fine.
  */
-export function verifyAssayRequest(input: VerifyInput, options?: VerifyOptions): Promise<VerifyResult> {
-  if (!options) return (defaultVerifier ??= createVerifier())(input);
-  let v = verifiers.get(options);
-  if (!v) verifiers.set(options, (v = createVerifier(options)));
-  return v(input);
+export function verifyAssayRequest(input: VerifyInput, options: VerifyOptions = {}): Promise<VerifyResult> {
+  return build(options, sharedCache(options), options.replayStore ?? sharedReplay)(input);
 }
 
 export { MemoryReplayStore };

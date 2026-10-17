@@ -9,32 +9,38 @@ export interface JwksSource {
   environment?: "production" | "testnet";
   jwks?: { keys: unknown[] };
   fetch?: typeof fetch;
-  /** Unix seconds. */
-  now: () => number;
 }
+
+const FETCH_TIMEOUT_MS = 5000;
+const FAILURE_BACKOFF_SECONDS = 5;
 
 interface Jwk { kty?: string; crv?: string; x?: string; kid?: string }
 
-/** Caches imported Ed25519 public keys by kid. */
+export function resolveJwksUrl(src: Pick<JwksSource, "jwksUrl" | "environment">): string {
+  return src.jwksUrl ?? (src.environment === "testnet" ? JWKS_URL_TESTNET : JWKS_URL_PRODUCTION);
+}
+
+/** Caches imported Ed25519 public keys by kid. Clock (unix seconds) is passed per call. */
 export class JwksCache {
   private keys = new Map<string, CryptoKey>();
   private loadedAt: number | undefined;
-  private inflight: Promise<boolean> | undefined;
-  private readonly url: string;
+  private failedAt: number | undefined;
+  private inflight: Promise<void> | undefined;
+  private staticLoad: Promise<void> | undefined;
+  readonly url: string;
 
   constructor(private readonly src: JwksSource) {
-    this.url = src.jwksUrl ?? (src.environment === "testnet" ? JWKS_URL_TESTNET : JWKS_URL_PRODUCTION);
+    this.url = resolveJwksUrl(src);
   }
 
-  async getKey(kid: string): Promise<CryptoKey | undefined> {
-    const now = this.src.now();
+  async getKey(kid: string, now: number): Promise<CryptoKey | undefined> {
     if (this.src.jwks) {
-      if (this.loadedAt === undefined) {
-        this.loadedAt = now;
-        await this.load(this.src.jwks.keys);
-      }
+      this.staticLoad ??= this.load(this.src.jwks.keys);
+      await this.staticLoad;
       return this.keys.get(kid);
     }
+    // Never declare a kid unknown while a load is still in flight.
+    if (this.inflight) await this.inflight;
     const fresh = this.loadedAt !== undefined && now - this.loadedAt < CACHE_TTL_SECONDS;
     if (fresh) {
       const hit = this.keys.get(kid);
@@ -42,29 +48,40 @@ export class JwksCache {
       // Unknown kid: refetch at most once per 60 s.
       if (now - this.loadedAt! < REFETCH_MIN_INTERVAL_SECONDS) return undefined;
     }
-    await this.refresh();
+    // After a failed fetch, wait 5 s before trying again (cached keys stay usable).
+    if (this.failedAt !== undefined && now - this.failedAt < FAILURE_BACKOFF_SECONDS) {
+      return this.keys.get(kid);
+    }
+    this.inflight ??= this.fetchKeys(now).finally(() => { this.inflight = undefined; });
+    await this.inflight;
     return this.keys.get(kid);
   }
 
-  private refresh(): Promise<boolean> {
-    // Concurrent callers share one fetch. A failed fetch is not rate limited,
-    // so the next call retries; the previous keys stay usable until it succeeds.
-    this.inflight ??= this.fetchKeys().finally(() => { this.inflight = undefined; });
-    return this.inflight;
-  }
-
-  private async fetchKeys(): Promise<boolean> {
+  private async fetchKeys(now: number): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const doFetch = this.src.fetch ?? fetch;
-      const res = await doFetch(this.url, { headers: { accept: "application/json" } });
-      if (!res.ok) return false;
-      const body = (await res.json()) as { keys?: unknown };
-      if (!body || !Array.isArray(body.keys)) return false;
-      this.loadedAt = this.src.now();
-      await this.load(body.keys);
-      return true;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("jwks fetch timeout")), FETCH_TIMEOUT_MS);
+      });
+      const work = (async () => {
+        const res = await doFetch(this.url, {
+          headers: { accept: "application/json" },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+        if (!res.ok) throw new Error("jwks http " + res.status);
+        const body = (await res.json()) as { keys?: unknown };
+        if (!body || !Array.isArray(body.keys)) throw new Error("jwks shape");
+        await this.load(body.keys);
+      })();
+      work.catch(() => {});
+      await Promise.race([work, timeout]);
+      this.loadedAt = now; // only after the keys have been replaced
+      this.failedAt = undefined;
     } catch {
-      return false;
+      this.failedAt = now;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
