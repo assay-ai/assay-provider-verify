@@ -7,3 +7,5 @@ __pycache__/
 coverage/
 .DS_Store
 .superpowers/
+.pytest_cache/
+.venv39/

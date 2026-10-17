@@ -27,7 +27,7 @@ def _target(environ: Dict[str, Any]) -> str:
     uri = environ.get("REQUEST_URI") or environ.get("RAW_URI")
     if uri:
         return uri
-    path = quote((environ.get("SCRIPT_NAME") or "") + (environ.get("PATH_INFO") or ""), safe=PATH_SAFE) or "/"
+    path = quote((environ.get("SCRIPT_NAME") or "") + (environ.get("PATH_INFO") or ""), safe=PATH_SAFE, encoding="latin-1") or "/"
     qs = environ.get("QUERY_STRING") or ""
     return path + ("?" + qs if qs else "")
 
@@ -73,8 +73,9 @@ class AssayVerifyWSGI:
 
         chunked = bool(environ.get("HTTP_TRANSFER_ENCODING"))
         raw = b""
-        if declared is not None or chunked:
-            # Without Content-Length, only a Transfer-Encoding body is read to EOF.
+        # Without Content-Length, read to EOF only when the server marks the
+        # input as terminated (PEP 3333 extension); otherwise reading could block.
+        if declared is not None or (chunked and environ.get("wsgi.input_terminated")):
             raw = _read(environ["wsgi.input"], declared, mx)  # type: ignore[assignment]
             if raw is None:
                 return self._respond(start_response, "413 Payload Too Large", PAYLOAD_TOO_LARGE)

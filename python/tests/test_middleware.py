@@ -111,7 +111,7 @@ def test_flask_replay_and_413():
     assert r.status_code == 413 and r.get_data(as_text=True) == '{"error":"payload_too_large"}'
 
 
-def test_wsgi_chunked_without_length_and_non_uploaded_get():
+def test_wsgi_get_without_body_reaches_app():
     # GET without body: no digest component, handler still runs.
     import io
 
@@ -134,3 +134,45 @@ def test_wsgi_chunked_without_length_and_non_uploaded_get():
     out = {}
     res = mw(environ, lambda s, hd, exc=None: out.update(status=s), )
     assert out["status"].startswith("200"), b"".join(res)
+
+
+def _wsgi_post(extra_environ, stream, **kw):
+    import hashlib, base64
+    from test_hardening import sign, JWK
+    from assay_provider_verify import MemoryReplayStore
+
+    body = b'{"a":1}'
+    m, t, h, b = sign(method="POST", target="/caf%C3%A9", body=body, nonce=kw.get("nonce", "w1"))
+    seen = {}
+
+    def app(environ, start_response):
+        seen["body"] = environ["wsgi.input"].read()
+        seen["cl"] = environ.get("CONTENT_LENGTH")
+        start_response("200 OK", [])
+        return [b""]
+
+    mw = AssayVerifyWSGI(app, jwks={"keys": [JWK]}, now=lambda: 1000, replay_store=MemoryReplayStore())
+    import io
+    environ = {"REQUEST_METHOD": "POST", "PATH_INFO": "/caf\xc3\xa9", "QUERY_STRING": "",
+               "wsgi.input": io.BytesIO(stream)}
+    environ.update(extra_environ)
+    for k, v in h.items():
+        environ["HTTP_" + k.upper().replace("-", "_")] = v
+    out = {}
+    res = mw(environ, lambda s, hd, exc=None: out.update(status=s))
+    return out["status"], seen, b"".join(res)
+
+
+def test_wsgi_latin1_path_roundtrip_without_request_uri():
+    status, seen, _ = _wsgi_post({"CONTENT_LENGTH": "7"}, b'{"a":1}')
+    assert status.startswith("200") and seen["body"] == b'{"a":1}'
+
+
+def test_wsgi_chunked_terminated_input_is_read_to_eof():
+    status, seen, _ = _wsgi_post({"HTTP_TRANSFER_ENCODING": "chunked", "wsgi.input_terminated": True}, b'{"a":1}')
+    assert status.startswith("200") and seen["body"] == b'{"a":1}' and seen["cl"] == "7"
+
+
+def test_wsgi_chunked_unterminated_input_not_read():
+    status, seen, body = _wsgi_post({"HTTP_TRANSFER_ENCODING": "chunked"}, b'{"a":1}')
+    assert status.startswith("401")  # empty body vs signed digest
