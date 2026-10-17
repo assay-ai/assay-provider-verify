@@ -27,6 +27,9 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      - name: Tag matches package version
+        run: test "${GITHUB_REF_NAME#node/v}" = "$(node -p "require('./package.json').version")"
+        working-directory: node
       - run: npm ci
         working-directory: node
       - run: npm test
@@ -50,13 +53,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Tag matches package version
+        run: test "${GITHUB_REF_NAME#python/v}" = "$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+        working-directory: python
       - run: pip install -e '.[test]' build
         working-directory: python
       - run: pytest
         working-directory: python
       - run: python -m build
         working-directory: python
-      # Preferred: trusted publishing. Add this repository and the "pypi"
+      # Preferred: trusted publishing. The "environment: pypi" line above is required
+      # for it and must match the environment name set on pypi.org. Add this repository and the "pypi"
       # environment as a trusted publisher on pypi.org, then no secret is needed.
       # Fallback: create a repository secret PYPI_TOKEN and uncomment "password".
       - uses: pypa/gh-action-pypi-publish@release/v1

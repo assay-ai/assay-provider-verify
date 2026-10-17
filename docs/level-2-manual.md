@@ -208,6 +208,8 @@ def verify_assay(method, host, target, headers, body, jwks, now, seen):
     names = re.findall(r'"([^"]+)"', m.group(2))
     covered = "content-digest" in names
     want = COMPONENTS + (["content-digest"] if covered else []) + ["x-assay-call-id"]
+    if not headers.get("x-assay-call-id"):
+        return "MALFORMED"
     if names != want or (body and not covered) or target.startswith("//") or not target.startswith("/"):
         return "MALFORMED"
     digest = "sha-256=:" + base64.b64encode(hashlib.sha256(body or b"").digest()).decode() + ":"
@@ -258,7 +260,8 @@ var (
 )
 
 // target: the request target as sent (r.RequestURI), body: the raw bytes (nil if none).
-// keys: kid -> public key, from the JWKS ("x" is base64url, 32 bytes).
+// keys: kid -> public key, from the JWKS ("x" is base64url). Every key must be a
+// 32-byte Ed25519 public key: ed25519.Verify panics on any other length.
 // Returns "OK" or a reason code.
 func Verify(r *http.Request, target string, body []byte, keys map[string]ed25519.PublicKey, now int64, seen map[string]bool) string {
 	si, sg := r.Header.Get("Signature-Input"), r.Header.Get("Signature")

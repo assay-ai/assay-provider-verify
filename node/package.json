@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "Verify Assay Ed25519 request signatures (RFC 9421 style) with WebCrypto only.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/assay-ai/assay-provider-verify.git",
+    "directory": "node"
+  },
+  "homepage": "https://github.com/assay-ai/assay-provider-verify#readme",
+  "bugs": {
+    "url": "https://github.com/assay-ai/assay-provider-verify/issues"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
