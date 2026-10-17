@@ -23,41 +23,48 @@ jobs:
 
   node:
     runs-on: ubuntu-latest
-    if: hashFiles('node/package.json') != ''
-    defaults:
-      run:
-        working-directory: node
     steps:
       - uses: actions/checkout@v4
+      - id: present
+        run: if test -f node/package.json; then echo present=true >> "$GITHUB_OUTPUT"; else echo present=false >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-node@v4
+        if: steps.present.outputs.present == 'true'
         with:
           node-version: 22
       - run: npm ci
+        if: steps.present.outputs.present == 'true'
+        working-directory: node
       - run: npm test
+        if: steps.present.outputs.present == 'true'
+        working-directory: node
 
   python:
     runs-on: ubuntu-latest
-    if: hashFiles('python/pyproject.toml') != ''
-    defaults:
-      run:
-        working-directory: python
     steps:
       - uses: actions/checkout@v4
+      - id: present
+        run: if test -f python/pyproject.toml; then echo present=true >> "$GITHUB_OUTPUT"; else echo present=false >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-python@v5
+        if: steps.present.outputs.present == 'true'
         with:
           python-version: '3.12'
       - run: pip install -e '.[test]'
+        if: steps.present.outputs.present == 'true'
+        working-directory: python
       - run: pytest
+        if: steps.present.outputs.present == 'true'
+        working-directory: python
 
   go:
     runs-on: ubuntu-latest
-    if: hashFiles('go/go.mod') != ''
-    defaults:
-      run:
-        working-directory: go
     steps:
       - uses: actions/checkout@v4
+      - id: present
+        run: if test -f go/go.mod; then echo present=true >> "$GITHUB_OUTPUT"; else echo present=false >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-go@v5
+        if: steps.present.outputs.present == 'true'
         with:
           go-version: '1.22'
       - run: go test ./...
+        if: steps.present.outputs.present == 'true'
+        working-directory: go
