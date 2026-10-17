@@ -1,6 +1,6 @@
 import { defineConfig } from "tsup";
 
-// Only entries that exist are built; adapters are added by later tasks.
+// Core plus the express, fastify, hono, next and redis adapters (all six entries).
 import { existsSync } from "node:fs";
 
 const candidates: Record<string, string> = {
