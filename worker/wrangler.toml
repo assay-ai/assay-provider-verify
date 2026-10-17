@@ -14,8 +14,9 @@ ORIGIN_URL = "https://origin.example.com"
 
 # Optional replay protection that works across all Worker instances.
 # Without it, replays are only caught inside one Worker isolate (best effort).
-# The Durable Object adds one extra round trip per request, so set locationHint
-# NONCE_LOCATION_HINT (for example "enam", "weur", "apac") to a region close to your origin. Uncomment all three blocks to enable.
+# The Durable Object adds one extra round trip per request, so also set
+# NONCE_LOCATION_HINT (for example "weur", "enam", "apac") under [vars] to a
+# region close to your origin. Uncomment the blocks below to enable.
 #
 # [[durable_objects.bindings]]
 # name = "NONCE_STORE"
