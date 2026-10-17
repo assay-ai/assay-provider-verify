@@ -1,4 +1,42 @@
-# How Assay request signatures work
+# How Assay protects your API
+
+Assay can prove to your API that a request really came from Assay. There are two modes. You can use one or both.
+
+## Choose a mode
+
+| | API-key mode | Signature mode |
+|---|---|---|
+| Code to write | None | A verifier (levels 0, 1 or 2 below) |
+| What proves the caller | A secret key you set in Assay | An Ed25519 signature on every request |
+| If the key leaks | Anyone can call you | Nothing leaks. You hold only public keys. |
+| Protects the body | No | Yes (digest in the signature) |
+| Stops replays | No | Yes (one-time numbers) |
+
+Start with API-key mode if you want to be live today. Move to signature mode when you can. It is safer and not hard.
+
+### API-key mode (no code)
+
+You choose a secret key and enter it in Assay. Assay sends it in a request header on every call. Your API (or your gateway) checks the header and rejects requests without the right value. Most API gateways can do this with a setting, not code.
+
+- Keys go **only in headers**. Never put a key in the URL or the query string. URLs end up in logs, browser history and error reports.
+- Use a long random value, and rotate it if you think it leaked.
+- Check it with a constant-time comparison if you check it in code.
+
+### Signature mode
+
+Assay signs every request. You verify the signature with Assay's public keys. Pick the level that fits you:
+
+| Level | What you do | Page |
+|---|---|---|
+| 0 | Deploy a Cloudflare Worker in front of your API. No code. | [level-0-cloudflare-worker.md](level-0-cloudflare-worker.md) |
+| 1 | Add a few lines of middleware (Node, Python, Go). | [level-1-node.md](level-1-node.md), [level-1-python.md](level-1-python.md) |
+| 2 | Write the check yourself, in any language. | [level-2-manual.md](level-2-manual.md) |
+
+If something is rejected, see [troubleshooting.md](troubleshooting.md).
+
+The rest of this page is the full contract. You only need it for level 2 or if you are curious.
+
+## How a signed request looks
 
 Every request Assay sends to your API carries two headers, `Signature-Input` and `Signature` (label `assay`), and a `Content-Digest` header when the request has a body. Verifying them proves the request came from Assay and was not altered. This page is the full contract, so you can also write your own verifier.
 

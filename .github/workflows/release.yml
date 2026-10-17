@@ -1,0 +1,77 @@
+name: Release
+
+# Push a tag to publish one package:
+#   node/v0.1.0    -> npm  @assay-ai/provider-verify
+#   python/v0.1.0  -> PyPI assay-provider-verify
+#   go/v0.1.0      -> Go module (the tag itself is the release)
+on:
+  push:
+    tags:
+      - 'node/v*'
+      - 'python/v*'
+      - 'go/v*'
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    if: startsWith(github.ref_name, 'node/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+        working-directory: node
+      - run: npm test
+        working-directory: node
+      - run: npm run build
+        working-directory: node
+      - run: npm publish --access public --provenance
+        working-directory: node
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  pypi:
+    if: startsWith(github.ref_name, 'python/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write # PyPI trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e '.[test]' build
+        working-directory: python
+      - run: pytest
+        working-directory: python
+      - run: python -m build
+        working-directory: python
+      # Preferred: trusted publishing. Add this repository and the "pypi"
+      # environment as a trusted publisher on pypi.org, then no secret is needed.
+      # Fallback: create a repository secret PYPI_TOKEN and uncomment "password".
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist
+          # password: ${{ secrets.PYPI_TOKEN }}
+
+  go:
+    if: startsWith(github.ref_name, 'go/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      # Go modules are published by the tag alone (module path .../go, tag go/vX.Y.Z).
+      - run: go test ./...
+        working-directory: go
