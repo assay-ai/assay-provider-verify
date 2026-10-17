@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
-import { createVerifier, type VerifyOptions } from "./core.js";
-import { rejectionBody } from "./reject.js";
+import { createVerifier } from "./core.js";
+import { DEFAULT_MAX_BODY_BYTES, PAYLOAD_TOO_LARGE, declaredTooLarge, headersSayBody, rejectionBody, type AdapterOptions } from "./reject.js";
 
 // Structural types so fastify stays an optional peer dependency.
 interface Req { method: string; raw: { url?: string }; headers: Record<string, string | string[] | undefined>; rawBody?: Buffer }
@@ -10,13 +10,25 @@ interface Instance {
 }
 
 /** Fastify plugin: `app.register(assayVerifyPlugin, options)`. Applies to the whole app (not encapsulated). */
-export const assayVerifyPlugin = async (app: Instance, options: VerifyOptions = {}): Promise<void> => {
+export const assayVerifyPlugin = async (app: Instance, options: AdapterOptions = {}): Promise<void> => {
   const verify = createVerifier(options);
+  const max = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   app.addHook("preParsing", async (req, reply, payload) => {
+    const tooLarge = () => {
+      reply.code(413).header("content-type", "application/json").send(PAYLOAD_TOO_LARGE);
+      return reply;
+    };
+    if (declaredTooLarge(req.headers, max)) return tooLarge();
     const chunks: Buffer[] = [];
-    for await (const chunk of payload) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    let total = 0;
+    for await (const chunk of payload) {
+      const b = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+      total += b.length;
+      if (total > max) return tooLarge();
+      chunks.push(b);
+    }
     const raw = Buffer.concat(chunks);
-    const hasBody = raw.length > 0 || req.headers["content-length"] !== undefined || req.headers["transfer-encoding"] !== undefined;
+    const hasBody = raw.length > 0 || headersSayBody(req.headers);
     const result = await verify({
       method: req.method,
       url: req.raw.url ?? "/",

@@ -19,6 +19,7 @@ const path = u.pathname + u.search;
 const opts: VerifyOptions = { jwks: { keys: [v1.publicKeyJwk] }, now: () => c.params.created, authority: "api.example.test" };
 const REJECT = '{"error":"invalid_assay_signature","reason":"DIGEST_MISMATCH"}';
 
+const rawSeen: Buffer[] = [];
 const closers: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   while (closers.length) await closers.pop()!();
@@ -83,10 +84,21 @@ suite("express", async (o) => {
   const app = express();
   app.use(expressVerify(o));
   app.post("/v1/search", (req, res) => {
-    expect(Buffer.isBuffer((req as unknown as { rawBody: Buffer }).rawBody)).toBe(true);
+    rawSeen.push((req as unknown as { rawBody: Buffer }).rawBody);
     res.json(req.body);
   });
   return listen(createServer(app));
+});
+it("express sets req.rawBody to a Buffer of the exact bytes", async () => {
+  rawSeen.length = 0;
+  const app = express();
+  app.use(expressVerify(opts));
+  app.post("/v1/search", (req, res) => {
+    rawSeen.push((req as unknown as { rawBody: Buffer }).rawBody);
+    res.json(req.body);
+  });
+  await send(await listen(createServer(app)));
+  expect(rawSeen[0]?.toString("utf8")).toBe(c.request.body);
 });
 
 suite("fastify", async (o) => {
@@ -117,14 +129,12 @@ describe("authority option", () => {
     app.post("/v1/search", (req, res) => res.json(req.body));
     const port = await listen(createServer(app));
     const status = await new Promise<number>((resolve, reject) => {
-      {
-        const r = request({ host: "127.0.0.1", port, path, method: "POST", headers: { ...c.request.headers, ...c.expected.headers, "content-type": "application/json", host: "localhost:1234" } }, (res) => {
-          res.resume();
-          resolve(res.statusCode ?? 0);
-        });
-        r.on("error", reject);
-        r.end(c.request.body);
-      }
+      const r = request({ host: "127.0.0.1", port, path, method: "POST", headers: { ...c.request.headers, ...c.expected.headers, "content-type": "application/json", host: "localhost:1234" } }, (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      r.on("error", reject);
+      r.end(c.request.body);
     });
     expect(status).toBe(200);
 
@@ -153,10 +163,11 @@ describe("express misconfiguration", () => {
 describe("redisReplayStore", () => {
   it("node-redis style: second identical nonce is a replay", async () => {
     const seen = new Set<string>();
+    const calls: unknown[] = [];
     const client = {
       isOpen: true,
       async set(k: string, _v: string, o: { NX: boolean; EX: number }) {
-        expect(o).toEqual({ NX: true, EX: 305 });
+        calls.push(o);
         if (seen.has(k)) return null;
         seen.add(k);
         return "OK";
@@ -166,14 +177,16 @@ describe("redisReplayStore", () => {
     expect(await s.checkAndStore("n1", 305)).toBe(true);
     expect(await s.checkAndStore("n1", 305)).toBe(false);
     expect([...seen]).toEqual(["assay:nonce:n1"]);
+    expect(calls[0]).toEqual({ NX: true, EX: 305 });
   });
   it("ioredis style", async () => {
     const seen = new Set<string>();
+    const calls: unknown[] = [];
     const client = {
       status: "ready",
       pipeline() {},
       async set(k: string, _v: string, ex: string, s: number, nx: string) {
-        expect([ex, s, nx]).toEqual(["EX", 10, "NX"]);
+        calls.push([ex, s, nx]);
         if (seen.has(k)) return null;
         seen.add(k);
         return "OK";
@@ -183,5 +196,57 @@ describe("redisReplayStore", () => {
     expect(await s.checkAndStore("n", 10)).toBe(true);
     expect(await s.checkAndStore("n", 10)).toBe(false);
     expect([...seen]).toEqual(["p:n"]);
+    expect(calls[0]).toEqual(["EX", 10, "NX"]);
+  });
+});
+
+describe("express body handling", () => {
+  it("assayVerify() then express.json() works and the handler sees the parsed body", async () => {
+    const app = express();
+    app.use(expressVerify(opts));
+    app.use(express.json());
+    app.post("/v1/search", (req, res) => res.json(req.body));
+    const r = await send(await listen(createServer(app)));
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.text)).toEqual({ q: "a b" });
+  });
+  it("non-JSON bodies are exposed as a Buffer on req.body", async () => {
+    const app = express();
+    app.use(expressVerify(opts));
+    app.post("/v1/search", (req, res) => res.json({ isBuffer: Buffer.isBuffer(req.body) }));
+    const r = await send(await listen(createServer(app)), false, { "content-type": "text/plain" });
+    expect(JSON.parse(r.text)).toEqual({ isBuffer: true });
+  });
+  it("rejects bodies over maxBodyBytes with 413 before verifying", async () => {
+    const app = express();
+    app.use(expressVerify({ ...opts, maxBodyBytes: 4 }));
+    app.post("/v1/search", (req, res) => res.json(req.body));
+    const r = await send(await listen(createServer(app)));
+    expect(r.status).toBe(413);
+    expect(r.text).toBe('{"error":"payload_too_large"}');
+  });
+});
+
+describe("empty body is still a body (content-digest covered)", () => {
+  const e = v1.cases.find((x: { name: string }) => x.name === "empty-string-body");
+  const eu = new URL(e.request.url);
+  const eopts: VerifyOptions = { jwks: { keys: [v1.publicKeyJwk] }, now: () => e.params.created, authority: eu.host };
+  const hit = async (port: number) => {
+    const res = await fetch(`http://127.0.0.1:${port}${eu.pathname}`, {
+      method: e.request.method,
+      headers: { ...e.request.headers, ...e.expected.headers },
+      body: "",
+    });
+    return res.status;
+  };
+  it("hono", async () => {
+    const app = new Hono();
+    app.use("*", honoVerify(eopts) as never);
+    app.post("/v1/empty", (ctx) => ctx.text("ok"));
+    expect(await hit(await listen(fetchServer((r) => Promise.resolve(app.fetch(r)))))).toBe(200);
+  });
+  it("next", async () => {
+    const h = withAssayVerify(async () => new Response("ok"), eopts);
+    expect(await hit(await listen(fetchServer(h)))).toBe(200);
   });
 });

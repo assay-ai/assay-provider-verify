@@ -13,14 +13,15 @@ unchanged; the raw body stays available.
 
 ## Express
 
-Mount it before any body parser (it needs the raw bytes). It sets `req.rawBody` (a `Buffer`) and, for
-JSON requests with `req.body` unset, `req.body = JSON.parse(raw)`.
+Mount it before any body parser (it needs the raw bytes). After a successful verification it sets
+`req.rawBody` (a `Buffer`), fills `req.body` when unset (parsed JSON for JSON content types, otherwise
+the raw `Buffer`) and marks the body as parsed, so a later `express.json()` is a harmless no-op.
 
 ```ts
 import { assayVerify } from "@assay-ai/provider-verify/express";
 
 app.use(assayVerify());
-app.use(express.json()); // optional, after assayVerify
+app.use(express.json()); // optional: no-op, the body is already parsed
 ```
 
 If a body parser ran first, the middleware answers `500` ("mount assayVerify() before body parsers")
@@ -57,7 +58,8 @@ export const POST = withAssayVerify(async (req) => Response.json(await req.json(
 
 `assayVerify(options)` / `withAssayVerify(handler, options)` take the same `VerifyOptions` as
 `verifyAssayRequest`: `environment: "testnet"` (or `jwksUrl`), `authority`, `replayStore`,
-`clockSkewSeconds`. Each adapter creates one verifier at setup, so the JWKS cache (1 hour) and the replay
+`clockSkewSeconds`, and `maxBodyBytes` (default 5 MiB; the body is buffered before authentication, larger
+bodies get `413 {"error":"payload_too_large"}` without verifying). Each adapter creates one verifier at setup, so the JWKS cache (1 hour) and the replay
 store are shared by all requests.
 
 ## Multiple instances and Redis
