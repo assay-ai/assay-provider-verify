@@ -1,0 +1,32 @@
+{
+  "name": "@assay-ai/provider-verify",
+  "version": "0.1.0",
+  "description": "Verify Assay Ed25519 request signatures (RFC 9421 style) with WebCrypto only.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }, "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" } },
+    "./express": { "import": { "types": "./dist/express.d.ts", "default": "./dist/express.js" }, "require": { "types": "./dist/express.d.cts", "default": "./dist/express.cjs" } },
+    "./fastify": { "import": { "types": "./dist/fastify.d.ts", "default": "./dist/fastify.js" }, "require": { "types": "./dist/fastify.d.cts", "default": "./dist/fastify.cjs" } },
+    "./hono": { "import": { "types": "./dist/hono.d.ts", "default": "./dist/hono.js" }, "require": { "types": "./dist/hono.d.cts", "default": "./dist/hono.cjs" } },
+    "./next": { "import": { "types": "./dist/next.d.ts", "default": "./dist/next.js" }, "require": { "types": "./dist/next.d.cts", "default": "./dist/next.cjs" } },
+    "./redis": { "import": { "types": "./dist/redis.d.ts", "default": "./dist/redis.js" }, "require": { "types": "./dist/redis.d.cts", "default": "./dist/redis.cjs" } }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}
