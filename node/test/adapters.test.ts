@@ -122,6 +122,18 @@ suite("next", async (o) => {
   return listen(fetchServer(handler));
 });
 
+it("next passes the route context ({ params }) through to the handler", async () => {
+  const seen: unknown[] = [];
+  const handler = withAssayVerify(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
+    seen.push(await ctx.params);
+    return Response.json(await req.json());
+  }, opts);
+  const port = await listen(fetchServer((r) => handler(r, { params: Promise.resolve({ id: "42" }) })));
+  const r = await send(port);
+  expect(r.status).toBe(200);
+  expect(seen).toEqual([{ id: "42" }]);
+});
+
 describe("authority option", () => {
   it("passes behind a Host rewrite, fails without it", async () => {
     const app = express();
