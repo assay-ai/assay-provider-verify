@@ -5,6 +5,9 @@
   "description": "Zero-code Cloudflare Worker that verifies Assay request signatures and forwards valid requests to your origin.",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "pretest": "npm --prefix ../node run build",
     "test": "vitest run",

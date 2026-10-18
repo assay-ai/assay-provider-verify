@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryReplayStore } from "@assay-ai/provider-verify";
-import { NonceStore, createWorker, durableReplayStore, type Env } from "../src/index.js";
+import { DatabaseSync } from "node:sqlite";
+import { NonceStore, ReplayStoreUnavailableError, createWorker, durableReplayStore, type Env } from "../src/index.js";
 
 const v1 = JSON.parse(readFileSync(new URL("../../test-vectors/v1.json", import.meta.url), "utf8"));
 const c = v1.cases[0];
@@ -93,38 +94,132 @@ describe("worker", () => {
   });
 });
 
+describe("durable replay store fails closed", () => {
+  const nsAnswering = (answer: () => Promise<Response>) =>
+    ({ idFromName: (n: string) => n, get: () => ({ fetch: answer }) }) as unknown as DurableObjectNamespace;
+  const w = () => createWorker({ jwks: { keys: [v1.publicKeyJwk] }, now: () => c.params.created });
+
+  it("answers 503 when the Durable Object returns an error status", async () => {
+    const res = await w().fetch(signed(), { ...env, NONCE_STORE: nsAnswering(async () => new Response("boom", { status: 500 })) });
+    expect(res.status).toBe(503);
+    expect(res.headers.get("content-type")).toBe("application/json");
+    expect(await res.text()).toBe('{"error":"replay_store_unavailable"}');
+    expect(originFetch).not.toHaveBeenCalled();
+  });
+
+  it("answers 503 when the Durable Object call throws", async () => {
+    const res = await w().fetch(signed(), {
+      ...env,
+      NONCE_STORE: nsAnswering(async () => {
+        throw new Error("Durable Object reset");
+      }),
+    });
+    expect(res.status).toBe(503);
+    expect(originFetch).not.toHaveBeenCalled();
+  });
+
+  it("durableReplayStore throws ReplayStoreUnavailableError on a non-ok answer or a bad body", async () => {
+    await expect(durableReplayStore(nsAnswering(async () => new Response("", { status: 503 }))).checkAndStore("a", 60)).rejects.toBeInstanceOf(
+      ReplayStoreUnavailableError,
+    );
+    await expect(durableReplayStore(nsAnswering(async () => Response.json({}))).checkAndStore("a", 60)).rejects.toBeInstanceOf(
+      ReplayStoreUnavailableError,
+    );
+  });
+});
+
 describe("NonceStore", () => {
+  /**
+   * Fake DurableObjectState exposing only what NonceStore may use: `storage.sql.exec`
+   * (backed by a real SQLite database, with the Cloudflare cursor's `toArray`/`one`)
+   * and the alarm methods. `node:sqlite` needs Node >= 22.13 (see worker/package.json engines). Any other storage API (get/put/list/delete) is absent and throws.
+   */
   function fakeState() {
-    const m = new Map<string, number>();
+    const db = new DatabaseSync(":memory:");
     let alarm: number | null = null;
-    return {
-      m,
-      getAlarm: () => alarm,
-      state: {
-        storage: {
-          get: async (k: string) => m.get(k),
-          put: async (k: string, v: number) => void m.set(k, v),
-          delete: async (ks: string[]) => void ks.forEach((k) => m.delete(k)),
-          list: async () => new Map(m),
-          getAlarm: async () => alarm,
-          setAlarm: async (t: number) => void (alarm = t),
+    const statements: string[] = [];
+    const sql = {
+      exec(query: string, ...bindings: unknown[]) {
+        statements.push(query);
+        const rows = db.prepare(query).all(...(bindings as never[])) as Record<string, unknown>[];
+        return {
+          toArray: () => rows,
+          one: () => {
+            if (rows.length !== 1) throw new Error(`Expected exactly one result from SQL query, got ${rows.length}`);
+            return rows[0];
+          },
+        };
+      },
+    };
+    const storage = new Proxy(
+      { sql, getAlarm: async () => alarm, setAlarm: async (t: number) => void (alarm = t) } as Record<string, unknown>,
+      {
+        get(target, prop) {
+          if (typeof prop === "string" && !(prop in target)) throw new Error(`storage.${prop} is not allowed in the fake`);
+          return target[prop as string];
         },
-      } as unknown as DurableObjectState,
+      },
+    );
+    return {
+      db,
+      statements,
+      getAlarm: () => alarm,
+      count: () => (db.prepare("SELECT COUNT(*) AS n FROM nonces").get() as { n: number }).n,
+      state: { storage } as unknown as DurableObjectState,
     };
   }
-  const call = (o: NonceStore, nonce: string) =>
-    o.fetch(new Request("https://x/", { method: "POST", body: JSON.stringify({ nonce, ttlSeconds: 60 }) })).then((r) => r.json());
+  const call = (o: NonceStore, nonce: unknown, ttlSeconds: unknown = 60) =>
+    o.fetch(new Request("https://x/", { method: "POST", body: JSON.stringify({ nonce, ttlSeconds }) }));
 
   it("flags the second sighting and expires entries on alarm", async () => {
     const f = fakeState();
     const o = new NonceStore(f.state);
-    expect(await call(o, "n1")).toEqual({ seen: false });
-    expect(await call(o, "n1")).toEqual({ seen: true });
+    expect(await (await call(o, "n1")).json()).toEqual({ seen: false });
+    expect(await (await call(o, "n1")).json()).toEqual({ seen: true });
     expect(f.getAlarm()).not.toBeNull();
-    f.m.set("n1", Date.now() - 1);
+    f.db.prepare("UPDATE nonces SET exp = ? WHERE nonce = 'n1'").run(Date.now() - 1);
     await o.alarm();
-    expect(f.m.size).toBe(0);
-    expect(await call(o, "n1")).toEqual({ seen: false });
+    expect(f.count()).toBe(0);
+    expect(await (await call(o, "n1")).json()).toEqual({ seen: false });
+  });
+
+  it("treats an expired row the alarm has not swept yet as unseen", async () => {
+    const f = fakeState();
+    const o = new NonceStore(f.state);
+    await call(o, "n2");
+    f.db.prepare("UPDATE nonces SET exp = ? WHERE nonce = 'n2'").run(Date.now() - 1);
+    expect(await (await call(o, "n2")).json()).toEqual({ seen: false });
+    expect(await (await call(o, "n2")).json()).toEqual({ seen: true });
+  });
+
+  it("alarm deletes any number of expired rows in one statement and re-arms to the earliest live expiry", async () => {
+    const f = fakeState();
+    const o = new NonceStore(f.state);
+    const ins = f.db.prepare("INSERT INTO nonces (nonce, exp) VALUES (?, ?)");
+    const past = Date.now() - 1000;
+    for (let i = 0; i < 1000; i++) ins.run(`old${i}`, past);
+    const live = Date.now() + 120_000;
+    ins.run("live-late", live + 5000);
+    ins.run("live-early", live);
+    f.statements.length = 0;
+    await o.alarm();
+    expect(f.count()).toBe(2);
+    expect(f.getAlarm()).toBe(live);
+    expect(f.statements.filter((q) => q.startsWith("DELETE"))).toHaveLength(1);
+  });
+
+  it("alarm leaves no alarm set when the table is empty", async () => {
+    const f = fakeState();
+    const o = new NonceStore(f.state);
+    await o.alarm();
+    expect(f.getAlarm()).toBeNull();
+  });
+
+  it("rejects malformed requests with 400", async () => {
+    const o = new NonceStore(fakeState().state);
+    expect((await call(o, "")).status).toBe(400);
+    expect((await call(o, "n", "60")).status).toBe(400);
+    expect((await o.fetch(new Request("https://x/", { method: "POST", body: "not json" }))).status).toBe(400);
   });
 
   it("durableReplayStore follows the ReplayStore contract", async () => {

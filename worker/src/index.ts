@@ -46,17 +46,32 @@ async function readLimited(req: Request, max: number): Promise<Uint8Array | null
   return out;
 }
 
+/** Thrown when the NonceStore Durable Object cannot answer; the Worker fails closed with 503. */
+export class ReplayStoreUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReplayStoreUnavailableError";
+  }
+}
+
 /** Cross-instance replay store backed by the NonceStore Durable Object. */
 export function durableReplayStore(ns: DurableObjectNamespace, locationHint?: string): ReplayStore {
   return {
     async checkAndStore(nonce: string, ttlSeconds: number): Promise<boolean> {
-      const id = ns.idFromName("nonces");
-      const stub = locationHint ? ns.get(id, { locationHint: locationHint as DurableObjectLocationHint }) : ns.get(id);
-      const res = await stub.fetch("https://nonce-store/check", {
-        method: "POST",
-        body: JSON.stringify({ nonce, ttlSeconds }),
-      });
-      const { seen } = (await res.json()) as { seen: boolean };
+      let seen: unknown;
+      try {
+        const id = ns.idFromName("nonces");
+        const stub = locationHint ? ns.get(id, { locationHint: locationHint as DurableObjectLocationHint }) : ns.get(id);
+        const res = await stub.fetch("https://nonce-store/check", {
+          method: "POST",
+          body: JSON.stringify({ nonce, ttlSeconds }),
+        });
+        if (!res.ok) throw new Error(`NonceStore answered ${res.status}`);
+        seen = ((await res.json()) as { seen?: unknown }).seen;
+      } catch (e) {
+        throw new ReplayStoreUnavailableError(e instanceof Error ? e.message : String(e));
+      }
+      if (typeof seen !== "boolean") throw new ReplayStoreUnavailableError("NonceStore answered without a seen flag");
       return !seen; // true = first time seen, as the ReplayStore contract requires
     },
   };
@@ -97,12 +112,19 @@ export function createWorker(extra: VerifyOptions = {}) {
       // Authority is the incoming request's own host.
       const authorityHeaders = new Headers(request.headers);
       authorityHeaders.set("host", url.host);
-      const result = await verifierFor(env, extra)({
-        method: request.method,
-        url: request.url,
-        headers: authorityHeaders,
-        body: hasBody ? bytes : null,
-      });
+      let result: Awaited<ReturnType<Verify>>;
+      try {
+        result = await verifierFor(env, extra)({
+          method: request.method,
+          url: request.url,
+          headers: authorityHeaders,
+          body: hasBody ? bytes : null,
+        });
+      } catch (e) {
+        // Fail closed: without a working replay store the request is not forwarded.
+        if (e instanceof ReplayStoreUnavailableError) return json(503, '{"error":"replay_store_unavailable"}');
+        throw e;
+      }
       if (!result.ok) {
         return json(401, `{"error":"invalid_assay_signature","reason":"${result.reason}"}`);
       }
@@ -130,35 +152,50 @@ export default createWorker();
 
 /**
  * Optional Durable Object remembering nonces so replays are caught across all
- * Worker instances. Entries expire through an alarm.
+ * Worker instances. It uses the SQLite storage backend (declared under
+ * `new_sqlite_classes`); expired rows are removed by an alarm in one statement.
  */
 export class NonceStore implements DurableObject {
-  constructor(private readonly state: DurableObjectState) {}
+  private readonly sql: SqlStorage;
+
+  constructor(private readonly ctx: DurableObjectState, _env?: unknown) {
+    this.sql = ctx.storage.sql;
+    this.sql.exec("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, exp INTEGER NOT NULL)");
+    this.sql.exec("CREATE INDEX IF NOT EXISTS nonces_exp ON nonces (exp)");
+  }
 
   async fetch(request: Request): Promise<Response> {
-    const { nonce, ttlSeconds } = (await request.json()) as { nonce: string; ttlSeconds: number };
-    const storage = this.state.storage;
+    let nonce: unknown;
+    let ttlSeconds: unknown;
+    try {
+      ({ nonce, ttlSeconds } = (await request.json()) as { nonce: unknown; ttlSeconds: unknown });
+    } catch {
+      return Response.json({ error: "bad_request" }, { status: 400 });
+    }
+    if (typeof nonce !== "string" || nonce === "" || typeof ttlSeconds !== "number" || !Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+      return Response.json({ error: "bad_request" }, { status: 400 });
+    }
     const now = Date.now();
-    const existing = await storage.get<number>(nonce);
-    if (existing !== undefined && existing > now) return Response.json({ seen: true });
-    const expiresAt = now + ttlSeconds * 1000;
-    await storage.put(nonce, expiresAt);
-    const alarm = await storage.getAlarm();
-    if (alarm === null || alarm > expiresAt) await storage.setAlarm(expiresAt);
+    const exp = now + Math.ceil(ttlSeconds * 1000);
+    // Insert the nonce; a live row means "seen". A row that expired but was not yet
+    // swept by the alarm is overwritten. RETURNING yields a row only when we wrote.
+    const written = this.sql
+      .exec(
+        "INSERT INTO nonces (nonce, exp) VALUES (?, ?) ON CONFLICT (nonce) DO UPDATE SET exp = excluded.exp WHERE nonces.exp <= ? RETURNING nonce",
+        nonce,
+        exp,
+        now,
+      )
+      .toArray().length;
+    if (written === 0) return Response.json({ seen: true });
+    const alarm = await this.ctx.storage.getAlarm();
+    if (alarm === null || alarm > exp) await this.ctx.storage.setAlarm(exp);
     return Response.json({ seen: false });
   }
 
   async alarm(): Promise<void> {
-    const storage = this.state.storage;
-    const now = Date.now();
-    const all = await storage.list<number>();
-    let next: number | null = null;
-    const expired: string[] = [];
-    for (const [k, exp] of all) {
-      if (exp <= now) expired.push(k);
-      else if (next === null || exp < next) next = exp;
-    }
-    if (expired.length) await storage.delete(expired);
-    if (next !== null) await storage.setAlarm(next);
+    this.sql.exec("DELETE FROM nonces WHERE exp <= ?", Date.now());
+    const next = this.sql.exec<{ next: number | null }>("SELECT MIN(exp) AS next FROM nonces").one().next;
+    if (next !== null) await this.ctx.storage.setAlarm(next);
   }
 }
