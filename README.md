@@ -6,10 +6,10 @@ Assay signs every request it forwards to your API with an Ed25519 signature (HTT
 
 | Level | You run | Use it when | Where |
 |---|---|---|---|
-| Middleware | Node, Python or Go server | You can add a few lines to your app | `node/`, `python/`, `go/` |
-| Library | Anything else | You want only the verify function and handle the response yourself | `node/`, `python/`, `go/` |
-| Gateway worker | Cloudflare in front of your API | You do not want to change your app | `worker/` |
-| Reference | Another language | You will write your own verifier | [docs/overview.md](docs/overview.md) and `test-vectors/` |
+| 0: Gateway worker | Cloudflare in front of your API | You do not want to change your app | `worker/`, [guide](docs/level-0-cloudflare-worker.md) |
+| 1: Middleware | Node, Python or Go server | You can add a few lines to your app | `node/`, `python/`, `go/`, guides for [Node](docs/level-1-node.md), [Python](docs/level-1-python.md), [Go](docs/level-1-go.md) |
+| 1: Library | Node, Python or Go, any framework | You want only the verify function and handle the response yourself | `node/`, `python/`, `go/` |
+| 2: Reference | Another language | You will write your own verifier | [docs/level-2-manual.md](docs/level-2-manual.md) and `test-vectors/` |
 
 ## Quick start
 
