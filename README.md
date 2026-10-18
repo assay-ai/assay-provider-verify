@@ -13,7 +13,7 @@ Assay signs every request it forwards to your API with an Ed25519 signature (HTT
 
 ## Quick start
 
-Packages: npm `@assay-ai/provider-verify`, PyPI `assay-provider-verify`, Go `github.com/assay-ai/assay-provider-verify/go`. Each language folder has its own README with the exact three lines for your framework.
+Packages: npm `@assay-ai/provider-verify`, PyPI `assay-provider-verify`, Go `github.com/assay-ai/assay-provider-verify/go`. Each package folder (`node/`, `python/`, `go/`, `worker/`) has its own README with the lines to add for your framework.
 
 Keys are fetched automatically from:
 

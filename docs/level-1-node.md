@@ -52,6 +52,11 @@ app.use("*", assayVerify());
 import { withAssayVerify } from "@assay-ai/provider-verify/next";
 
 export const POST = withAssayVerify(async (req) => Response.json(await req.json()));
+
+// Dynamic routes: the route context (for example { params }) is passed through unchanged.
+export const GET = withAssayVerify(async (req, { params }: { params: Promise<{ id: string }> }) =>
+  Response.json({ id: (await params).id }),
+);
 ```
 
 ## Options
