@@ -87,6 +87,10 @@ app.add_middleware(AssayVerifyMiddleware, replay_store=redis_replay_store(r))  #
 redis-py compatible client (`pip install "assay-provider-verify[redis]"`). Redis errors are not
 swallowed: verification fails closed.
 
+Use a sync client (`redis.Redis`, not `redis.asyncio.Redis`), also under FastAPI/Starlette. The ASGI
+middleware runs verification (the JWKS fetch and the replay check) in a worker thread, so the sync
+Redis calls and a slow JWKS fetch never block the event loop.
+
 ## Proxies and the `authority` option
 
 The signature covers `@authority`, the host the caller used. If a proxy rewrites `Host`, set the

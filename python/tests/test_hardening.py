@@ -231,3 +231,49 @@ def test_redis_store_second_use_false():
     assert s.check_and_store("n", 12.2) is True
     assert s.check_and_store("n", 12.2) is False
     assert "assay:nonce:n" in c.data and c.data["assay:nonce:n"][1] == 13
+
+
+def test_asgi_slow_jwks_fetch_does_not_block_event_loop(monkeypatch):
+    import asyncio
+    import threading
+
+    from assay_provider_verify.asgi import AssayVerifyMiddleware
+
+    released = threading.Event()
+    seen = {}
+
+    def slow_open(req, timeout=None):
+        # Blocks until the event loop sets the event; if verification ran on the loop, it never could.
+        seen["unblocked"] = released.wait(timeout=3)
+        return FakeResp({"keys": [JWK]})
+
+    monkeypatch.setattr(jwks_mod, "urlopen", slow_open)
+
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    mw = AssayVerifyMiddleware(app, jwks_url="https://slow.test/k.json", now=lambda: 1000,
+                               replay_store=MemoryReplayStore())
+    method, target, headers, _ = sign(nonce="slow")
+    path, _, qs = target.partition("?")
+    scope = {"type": "http", "method": method, "path": path, "raw_path": path.encode(),
+             "query_string": qs.encode(), "headers": [(k.encode(), v.encode()) for k, v in headers.items()]}
+    sent = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(msg):
+        sent.append(msg)
+
+    async def other_request():
+        await asyncio.sleep(0.05)  # runs only if the loop is free while the fetch is in flight
+        released.set()
+
+    async def main():
+        await asyncio.gather(mw(scope, receive, send), other_request())
+
+    asyncio.run(main())
+    assert seen["unblocked"] is True
+    assert sent[0]["status"] == 200
