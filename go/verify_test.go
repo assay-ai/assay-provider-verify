@@ -230,6 +230,9 @@ func TestBadKeyLengthIsSkipped(t *testing.T) {
 }
 
 func TestDefaultReplayStoreIsShared(t *testing.T) {
+	saved := defaultReplay
+	defaultReplay = NewMemoryReplayStore(10)
+	t.Cleanup(func() { defaultReplay = saved })
 	jwk, r, body, created := firstVector(t)
 	mk := func() *Verifier {
 		v, err := New(Options{JWKS: staticJWKS(t, jwk), Now: func() time.Time { return time.Unix(created, 0) }})
@@ -313,5 +316,14 @@ func TestParseDictionaryRejectsJunk(t *testing.T) {
 		if _, err := parseDictionary(s); err == nil {
 			t.Errorf("%q should fail", s)
 		}
+	}
+}
+
+func TestUnpaddedSignatureMatchesNode(t *testing.T) {
+	v, r, body := newFirst(t, nil)
+	sig := strings.TrimRight(r.Header.Get("Signature"), ":")
+	r.Header.Set("Signature", strings.TrimRight(sig, "=")+":")
+	if _, _, reason, err := v.Verify(r, body); err != nil || reason != "" {
+		t.Fatalf("unpadded: %q %v", reason, err)
 	}
 }

@@ -54,7 +54,7 @@ the same bytes to your handler.
 
 Keys are fetched with a 5 s timeout, cached for one hour, and shared by all verifiers for the same
 URL. An unknown `kid` triggers at most one refetch per 60 s; after a failed fetch the next attempt
-waits 5 s. If the replay store returns an error, the middleware answers `500` and the request is
+waits 5 s. `ClockSkew: 0` means the 60 s default. Caches are keyed by URL and `*http.Client`, so build one client and reuse it. If the replay store returns an error, the middleware answers `500` and the request is
 not served (fail closed).
 
 ## Without the middleware

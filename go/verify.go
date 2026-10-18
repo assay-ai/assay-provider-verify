@@ -4,7 +4,6 @@
 package assayverify
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -165,7 +164,7 @@ func (v *Verifier) Verify(r *http.Request, body []byte) (keyID string, callID st
 	if sm.item == nil || sm.item.kind != kindBytes {
 		return reject(ReasonMalformed)
 	}
-	signature, e := base64.StdEncoding.DecodeString(sm.item.s)
+	signature, e := base64.RawStdEncoding.DecodeString(strings.TrimRight(sm.item.s, "="))
 	if e != nil {
 		return reject(ReasonMalformed)
 	}
@@ -298,11 +297,7 @@ func (v *Verifier) Verify(r *http.Request, body []byte) (keyID string, callID st
 	if ttl < 1 {
 		ttl = 1
 	}
-	ctx := context.Background()
-	if r.Context() != nil {
-		ctx = r.Context()
-	}
-	fresh, err := v.replay.CheckAndStore(ctx, nonce, time.Duration(ttl)*time.Second)
+	fresh, err := v.replay.CheckAndStore(r.Context(), nonce, time.Duration(ttl)*time.Second)
 	if err != nil {
 		return "", "", "", err
 	}
