@@ -19,52 +19,81 @@ jobs:
       - name: Negative vectors are up to date
         run: |
           node scripts/make-negative-vectors.mjs
-          git diff --exit-code test-vectors/negative.json
+          git diff --exit-code test-vectors/
 
   node:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    defaults:
+      run:
+        working-directory: node
     steps:
       - uses: actions/checkout@v4
-      - id: present
-        run: if test -f node/package.json; then echo present=true >> "$GITHUB_OUTPUT"; else echo present=false >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-node@v4
-        if: steps.present.outputs.present == 'true'
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The worker tests use node:sqlite (Node >= 22.13).
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The worker depends on file:../node, so the node package is installed and built first.
+      - run: npm ci && npm run build
+        working-directory: node
       - run: npm ci
-        if: steps.present.outputs.present == 'true'
-        working-directory: node
+        working-directory: worker
+      - run: npm run typecheck
+        working-directory: worker
       - run: npm test
-        if: steps.present.outputs.present == 'true'
-        working-directory: node
+        working-directory: worker
+      - run: npx wrangler deploy --dry-run --outdir dist
+        working-directory: worker
 
   python:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The package supports Python >= 3.9 at runtime; the pinned test tools need 3.10+.
+        python-version: ['3.10', '3.12']
+    defaults:
+      run:
+        working-directory: python
     steps:
       - uses: actions/checkout@v4
-      - id: present
-        run: if test -f python/pyproject.toml; then echo present=true >> "$GITHUB_OUTPUT"; else echo present=false >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-python@v5
-        if: steps.present.outputs.present == 'true'
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
       - run: pip install -e '.[test]'
-        if: steps.present.outputs.present == 'true'
-        working-directory: python
       - run: pytest
-        if: steps.present.outputs.present == 'true'
-        working-directory: python
 
   go:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ['1.21', '1.22']
+    defaults:
+      run:
+        working-directory: go
+    env:
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v4
-      - id: present
-        run: if test -f go/go.mod; then echo present=true >> "$GITHUB_OUTPUT"; else echo present=false >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-go@v5
-        if: steps.present.outputs.present == 'true'
         with:
-          go-version: '1.22'
-      - run: go test ./...
-        if: steps.present.outputs.present == 'true'
-        working-directory: go
+          go-version: ${{ matrix.go-version }}
+      - run: go vet ./...
+      - run: test -z "$(gofmt -l .)"
+      - run: go test -race ./...

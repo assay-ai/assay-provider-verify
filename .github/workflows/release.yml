@@ -32,6 +32,8 @@ jobs:
         working-directory: node
       - run: npm ci
         working-directory: node
+      - run: npm run typecheck
+        working-directory: node
       - run: npm test
         working-directory: node
       - run: npm run build
