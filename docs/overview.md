@@ -62,7 +62,7 @@ The file is a JWKS with Ed25519 keys (`kty: "OKP"`, `crv: "Ed25519"`). Match the
 2. Check `tag="assay-request"` (else `WRONG_TAG`), `alg="ed25519"`, integer `created` and `expires`, non-empty `nonce` and `keyid` (else `MALFORMED`).
 3. The covered components must be exactly the list above. A non-empty body whose `content-digest` is not covered: `MALFORMED`. When covered, recompute the digest over the raw body and compare with the header: mismatch is `DIGEST_MISMATCH`.
 4. Time: `created - 60 <= now <= expires + 60` and `expires - created <= 300`, else `EXPIRED`.
-5. Rebuild the signature base from the received request. `@authority` comes from the `Host` header, unless you configure an override (for example behind a proxy that rewrites Host).
+5. Rebuild the signature base from the received request. `@authority` is the `Host` header as received (lowercased; the SDKs never add or strip a port), unless you configure an override (for example behind a proxy that rewrites Host or the port).
 6. Find `keyid` in the JWKS (else `UNKNOWN_KEY`) and verify the Ed25519 signature (else `BAD_SIGNATURE`).
 7. Nonce: if already seen, `REPLAYED`; otherwise remember it until `expires + 60`.
 

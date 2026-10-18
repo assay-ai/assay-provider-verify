@@ -28,7 +28,7 @@ Reject with status `401`, header `content-type: application/json` and body `{"er
 - **Use the path and query exactly as sent.** Take them from the request target (the part after the method on the first line). Do not decode, resolve, normalise or re-encode them. `a%20b` stays `a%20b`. `/a/../b` stays `/a/../b`.
 - **Reject targets that start with `//`.** A target like `//evil.test/x` can be read as a host by some servers. Reject it with `MALFORMED`. A target must start with a single `/`.
 - **Use the raw body.** Hash the bytes you received. Never hash a parsed and re-serialised JSON value.
-- **`@authority` is the host, in lowercase.** Leave out the port when it is the default for the scheme (443 for https, 80 for http). Keep it for any other port.
+- **`@authority` is the `Host` header as received, in lowercase.** Do not add or remove a port. Assay signs the host it calls, with `:port` only when the port is not the scheme default, and sends that same value as `Host`, so the header matches when nothing in between changes it. If a proxy rewrites `Host` or the port (for example to an internal name or `:8080`), use the public host you configured instead of the header, as the SDKs do with their `authority` option.
 - **Do not follow redirects.** See [troubleshooting](troubleshooting.md#my-endpoint-redirects).
 - **Never skip the check on error.** If anything fails (network, parsing, a crash), reject the request.
 
@@ -47,7 +47,7 @@ Values:
 | Part | Value |
 |---|---|
 | `@method` | The method in uppercase, for example `POST` |
-| `@authority` | The host in lowercase, with `:port` only if not the default |
+| `@authority` | The `Host` header as received, in lowercase (or your configured public host) |
 | `@path` | The path as sent. `/` if it is empty |
 | `@query` | `?` followed by the query as sent. Just `?` if there is no query |
 | `content-digest` | The `Content-Digest` value: `sha-256=:<base64 of SHA-256 of the raw body>:` |
@@ -335,7 +335,7 @@ func Verify(r *http.Request, target string, body []byte, keys map[string]ed25519
 }
 ```
 
-Note for Go: `r.Host` must have the default port removed (`example.com`, not `example.com:443`). Go keeps whatever the client sent.
+Note for Go: `r.Host` is the `Host` header as the client sent it. Use it as is (lowercased); do not add or strip a port.
 
 ## Fetching the keys
 
@@ -347,4 +347,4 @@ Note for Go: `r.Host` must have the default port removed (`example.com`, not `ex
 
 ## Check your work
 
-Run every case in `test-vectors/v1.json` (all must verify) and `test-vectors/negative.json` (each must give its `expectedReason`). The file shapes are described in [overview.md](overview.md#test-vectors). If the worked example above passes but others fail, check the `@authority` port rule and header name case first.
+Run every case in `test-vectors/v1.json` (all must verify) and `test-vectors/negative.json` (each must give its `expectedReason`). The file shapes are described in [overview.md](overview.md#test-vectors). If the worked example above passes but others fail, check `@authority` (the `Host` header as received, or your public host behind a proxy) and header name case first.

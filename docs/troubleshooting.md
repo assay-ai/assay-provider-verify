@@ -14,7 +14,8 @@ The signature does not match what your server rebuilt. The signature covers the 
 
 Likely causes and fixes:
 
-- **A proxy or load balancer rewrites `Host`.** Your app sees an internal name, but Assay signed the public one. Set the `authority` option to the public host, for example `authority: "api.example.com"`. Add the port only if it is not the scheme default.
+- **A proxy or load balancer rewrites `Host`.** Your app sees an internal name or port, but Assay signed the public one. The SDKs use the `Host` header exactly as received (lowercased) and never add or strip a port. Set the `authority` option to the public host, for example `authority: "api.example.com"`. Add the port only if it is not the scheme default.
+- **Dot segments in the path with Hono, Next.js or the Cloudflare Worker.** These run on the WHATWG `Request` URL, which is already normalised: `/a/./b` and `/a/../b` arrive as `/a/b` and `/b`, so the rebuilt `@path` differs from the signed one. Express, Fastify, Python and Go see the target as sent. Register endpoint URLs without `.` or `..` segments.
 - **A proxy rewrites the path or the query.** Examples: stripping a prefix, adding a trailing slash, re-encoding `%20` as `+`. Verify before the rewrite, or stop rewriting. Do not change paths on the way to the verifier.
 - **Your framework decodes the path or query** before you read it. Give the verifier the target exactly as sent.
 - **You are using the wrong key set** for the traffic. That normally gives `UNKNOWN_KEY` first, but check the environment anyway.
