@@ -31,7 +31,7 @@ The button works once this repository is public. Steps: [docs/level-0-cloudflare
 ## Documentation
 
 - [docs/level-0-cloudflare-worker.md](docs/level-0-cloudflare-worker.md): the zero-code Cloudflare Worker.
-- [docs/level-1-node.md](docs/level-1-node.md) and [docs/level-1-python.md](docs/level-1-python.md): middleware for Node and Python.
+- [docs/level-1-node.md](docs/level-1-node.md), [docs/level-1-python.md](docs/level-1-python.md) and [docs/level-1-go.md](docs/level-1-go.md): middleware for Node, Python and Go.
 - [docs/level-2-manual.md](docs/level-2-manual.md): write the check yourself, with a worked example.
 - [docs/troubleshooting.md](docs/troubleshooting.md): what each reject reason and console warning means.
 - [docs/overview.md](docs/overview.md): API-key and signature modes, how the signature works, the verification steps, reason codes and the test vectors.

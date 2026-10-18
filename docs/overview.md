@@ -29,7 +29,7 @@ Assay signs every request. You verify the signature with Assay's public keys. Pi
 | Level | What you do | Page |
 |---|---|---|
 | 0 | Deploy a Cloudflare Worker in front of your API. No code. | [level-0-cloudflare-worker.md](level-0-cloudflare-worker.md) |
-| 1 | Add a few lines of middleware (Node, Python). | [level-1-node.md](level-1-node.md), [level-1-python.md](level-1-python.md) |
+| 1 | Add a few lines of middleware (Node, Python, Go). | [level-1-node.md](level-1-node.md), [level-1-python.md](level-1-python.md), [level-1-go.md](level-1-go.md) |
 | 2 | Write the check yourself, in any language. | [level-2-manual.md](level-2-manual.md) |
 
 If something is rejected, see [troubleshooting.md](troubleshooting.md).
