@@ -68,7 +68,7 @@ jobs:
       # for it and must match the environment name set on pypi.org. Add this repository and the "pypi"
       # environment as a trusted publisher on pypi.org, then no secret is needed.
       # Fallback: create a repository secret PYPI_TOKEN and uncomment "password".
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: python/dist
           # password: ${{ secrets.PYPI_TOKEN }}
