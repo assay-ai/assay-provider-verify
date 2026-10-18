@@ -26,6 +26,20 @@ describe("JWKS cache", () => {
     expect(f.mock.calls[0]![0]).toBe("https://api.goassay.ai/.well-known/assay-request-keys.json");
   });
 
+  it("shares one JWKS cache per URL across verifiers", async () => {
+    const f = fakeFetch();
+    const opts = { fetch: f as any, jwksUrl: "https://shared.example.test/jwks.json", now: () => c1.params.created };
+    expect((await createVerifier(opts)(inputOf(c1))).ok).toBe(true);
+    expect((await createVerifier({ ...opts })(inputOf(c2))).ok).toBe(true);
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a separate in-memory replay store per verifier when none is given", async () => {
+    const opts = { jwks: { keys: [v1.publicKeyJwk] }, now: () => c1.params.created };
+    expect((await createVerifier(opts)(inputOf(c1))).ok).toBe(true);
+    expect((await createVerifier(opts)(inputOf(c1))).ok).toBe(true);
+  });
+
   it("refetches once on unknown kid, then not again within 60s", async () => {
     const f = fakeFetch();
     let now = c1.params.created;

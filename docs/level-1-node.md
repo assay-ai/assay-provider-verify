@@ -64,8 +64,10 @@ export const GET = withAssayVerify(async (req, { params }: { params: Promise<{ i
 `assayVerify(options)` / `withAssayVerify(handler, options)` take the same `VerifyOptions` as
 `verifyAssayRequest`: `environment: "testnet"` (or `jwksUrl`), `authority`, `replayStore`,
 `clockSkewSeconds`, and `maxBodyBytes` (default 5 MiB; the body is buffered before authentication, larger
-bodies get `413 {"error":"payload_too_large"}` without verifying). Each adapter creates one verifier at setup, so the JWKS cache (1 hour) and the replay
-store are shared by all requests.
+bodies get `413 {"error":"payload_too_large"}` without verifying). The JWKS cache (1 hour) is shared
+process-wide by every verifier that uses the same key set URL. Each adapter (and each `createVerifier()`)
+creates one verifier at setup with its own in-memory replay store unless you pass `replayStore`, so mount
+the adapter once and reuse it; `verifyAssayRequest` without `replayStore` uses one process-wide store.
 
 ## Multiple instances and Redis
 

@@ -234,9 +234,13 @@ function newCache(options: VerifyOptions): JwksCache {
   return new JwksCache({ jwksUrl: options.jwksUrl, environment: options.environment, jwks: options.jwks, fetch: options.fetch });
 }
 
-/** Builds a verifier that owns one JWKS cache and one replay store (unless given). */
+/**
+ * Builds a reusable verifier. The JWKS cache is shared process-wide per resolved
+ * URL (like `verifyAssayRequest`). The replay store is the one given, otherwise a
+ * new in-memory store owned by this verifier.
+ */
 export function createVerifier(options: VerifyOptions = {}): Verifier {
-  return build(options, newCache(options), options.replayStore ?? new MemoryReplayStore());
+  return build(options, sharedCache(options), options.replayStore ?? new MemoryReplayStore());
 }
 
 // One-shot helper state: a process-wide default replay store, and JWKS caches
