@@ -4,7 +4,7 @@ Verify Assay request signatures in one line. The package has zero runtime depend
 packages are optional peer dependencies.
 
 ```sh
-npm install @assay-ai/provider-verify
+npm install @goassay-ai/provider-verify
 ```
 
 Node 20 or newer. Rejected requests get `401`, `content-type: application/json` and
@@ -18,7 +18,7 @@ Mount it before any body parser (it needs the raw bytes). After a successful ver
 the raw `Buffer`) and marks the body as parsed, so a later `express.json()` is a harmless no-op.
 
 ```ts
-import { assayVerify } from "@assay-ai/provider-verify/express";
+import { assayVerify } from "@goassay-ai/provider-verify/express";
 
 app.use(assayVerify());
 app.use(express.json()); // optional: no-op, the body is already parsed
@@ -30,7 +30,7 @@ instead of guessing.
 ## Fastify
 
 ```ts
-import { assayVerifyPlugin } from "@assay-ai/provider-verify/fastify";
+import { assayVerifyPlugin } from "@goassay-ai/provider-verify/fastify";
 
 await app.register(assayVerifyPlugin);
 ```
@@ -41,7 +41,7 @@ hook and sets `request.rawBody`.
 ## Hono
 
 ```ts
-import { assayVerify } from "@assay-ai/provider-verify/hono";
+import { assayVerify } from "@goassay-ai/provider-verify/hono";
 
 app.use("*", assayVerify());
 ```
@@ -49,7 +49,7 @@ app.use("*", assayVerify());
 ## Next.js route handlers
 
 ```ts
-import { withAssayVerify } from "@assay-ai/provider-verify/next";
+import { withAssayVerify } from "@goassay-ai/provider-verify/next";
 
 export const POST = withAssayVerify(async (req) => Response.json(await req.json()));
 
@@ -76,7 +76,7 @@ instance, use a shared store so a nonce replayed against another instance is sti
 
 ```ts
 import { createClient } from "redis"; // node-redis v4+, or ioredis
-import { redisReplayStore } from "@assay-ai/provider-verify/redis";
+import { redisReplayStore } from "@goassay-ai/provider-verify/redis";
 
 const redis = createClient({ url: process.env.REDIS_URL });
 await redis.connect();

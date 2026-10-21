@@ -13,7 +13,7 @@ Assay signs every request it forwards to your API with an Ed25519 signature (HTT
 
 ## Quick start
 
-Packages: npm `@assay-ai/provider-verify`, PyPI `assay-provider-verify`, Go `github.com/assay-ai/assay-provider-verify/go`. Each package folder (`node/`, `python/`, `go/`, `worker/`) has its own README with the lines to add for your framework.
+Packages: npm `@goassay-ai/provider-verify`, PyPI `assay-provider-verify`, Go `github.com/assay-ai/assay-provider-verify/go`. Each package folder (`node/`, `python/`, `go/`, `worker/`) has its own README with the lines to add for your framework.
 
 Keys are fetched automatically from:
 
@@ -46,7 +46,7 @@ For maintainers.
 
 - Tag `node/vX.Y.Z`, `python/vX.Y.Z` or `go/vX.Y.Z` to publish that package (`.github/workflows/release.yml`). Go needs only the tag.
 - Tokens are repository secrets set by the owner: `NPM_TOKEN` for npm. PyPI uses trusted publishing (preferred) or a `PYPI_TOKEN` secret.
-- Before announcing the Deploy button, switch `worker/package.json` from `"@assay-ai/provider-verify": "file:../node"` to the published version, and check the Worker still builds.
+- Before announcing the Deploy button, switch `worker/package.json` from `"@goassay-ai/provider-verify": "file:../node"` to the published version, and check the Worker still builds.
 - Check the Deploy button's subdirectory URL and the free-plan limits quoted in [docs/level-0-cloudflare-worker.md](docs/level-0-cloudflare-worker.md) against Cloudflare's current documentation.
 
 ## License
