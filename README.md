@@ -45,8 +45,8 @@ The button works once this repository is public. Steps: [docs/level-0-cloudflare
 For maintainers.
 
 - Tag `node/vX.Y.Z`, `python/vX.Y.Z` or `go/vX.Y.Z` to publish that package (`.github/workflows/release.yml`). Go needs only the tag.
-- Tokens are repository secrets set by the owner: `NPM_TOKEN` for npm. PyPI uses trusted publishing (preferred) or a `PYPI_TOKEN` secret.
-- Before announcing the Deploy button, switch `worker/package.json` from `"@goassay-ai/provider-verify": "file:../node"` to the published version, and check the Worker still builds.
+- npm uses trusted publishing (OIDC): npmjs.com trusts `release.yml` in this repository, so no npm token is stored anywhere; a tag for a version already on npm is skipped. PyPI uses trusted publishing (preferred) or a `PYPI_TOKEN` secret.
+- `worker/package.json` pins the published package; after releasing a new version, bump it there too.
 - Check the Deploy button's subdirectory URL and the free-plan limits quoted in [docs/level-0-cloudflare-worker.md](docs/level-0-cloudflare-worker.md) against Cloudflare's current documentation.
 
 ## License
