@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryReplayStore } from "@assay-ai/provider-verify";
+import { MemoryReplayStore } from "@goassay-ai/provider-verify";
 import { DatabaseSync } from "node:sqlite";
 import { NonceStore, ReplayStoreUnavailableError, createWorker, durableReplayStore, type Env } from "../src/index.js";
 

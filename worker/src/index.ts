@@ -1,5 +1,5 @@
-import { MemoryReplayStore, createVerifier } from "@assay-ai/provider-verify";
-import type { ReplayStore, VerifyOptions } from "@assay-ai/provider-verify";
+import { MemoryReplayStore, createVerifier } from "@goassay-ai/provider-verify";
+import type { ReplayStore, VerifyOptions } from "@goassay-ai/provider-verify";
 
 export interface Env {
   ORIGIN_URL: string;
