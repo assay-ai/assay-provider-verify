@@ -1,6 +1,6 @@
 {
   "name": "@goassay-ai/provider-verify",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Verify Assay Ed25519 request signatures (RFC 9421 style) with WebCrypto only.",
   "license": "MIT",
   "repository": {
