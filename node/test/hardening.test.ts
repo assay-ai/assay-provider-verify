@@ -56,12 +56,18 @@ describe("H1 request target", () => {
 describe("H2 fetch timeout", () => {
   it("a hanging fetch is bounded at 5s and then UNKNOWN_KEY", async () => {
     vi.useFakeTimers();
-    const f = vi.fn(() => new Promise<Response>(() => {}));
-    const verify = createVerifier({ fetch: f as any, now: () => c1.params.created });
-    const p = verify(inputOf(c1));
-    await vi.advanceTimersByTimeAsync(100);
-    await vi.advanceTimersByTimeAsync(5001);
-    expect(await p).toEqual({ ok: false, reason: "UNKNOWN_KEY" });
+    try {
+      const f = vi.fn(() => new Promise<Response>(() => {}));
+      const verify = createVerifier({ fetch: f as any, now: () => c1.params.created });
+      const p = verify(inputOf(c1));
+      // The timeout is armed only once the request reaches the fetch, after
+      // real (unfaked) crypto work: advancing before that would skip it.
+      await vi.waitFor(() => expect(f).toHaveBeenCalled());
+      await vi.advanceTimersByTimeAsync(5001);
+      expect(await p).toEqual({ ok: false, reason: "UNKNOWN_KEY" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
