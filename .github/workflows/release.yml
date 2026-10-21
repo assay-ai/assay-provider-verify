@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # npm trusted publishing + provenance
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -40,10 +40,19 @@ jobs:
         working-directory: node
       - run: npm run build
         working-directory: node
-      - run: npm publish --access public --provenance
+      # Trusted publishing (OIDC): npmjs.com trusts this repository's release.yml, so no
+      # token is stored anywhere. It needs npm 11.5.1 or newer; Node 22 ships npm 10.
+      - run: npm install -g npm@11.6.2
+      - name: Skip a version that is already on npm
+        id: published
+        run: |
+          if npm view "$(node -p "require('./package.json').name")@${GITHUB_REF_NAME#node/v}" version >/dev/null 2>&1; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+          fi
         working-directory: node
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - if: steps.published.outputs.already != 'true'
+        run: npm publish --access public --provenance
+        working-directory: node
 
   pypi:
     if: startsWith(github.ref_name, 'python/v')
