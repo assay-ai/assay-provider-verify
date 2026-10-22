@@ -1,4 +1,4 @@
-# assay-provider-verify
+# goassay-provider-verify
 
 Verify that a request to your API really comes from [Assay](https://goassay.ai). Assay signs every
 request it forwards with an Ed25519 signature (HTTP Message Signatures, RFC 9421 style); this package
@@ -6,7 +6,7 @@ checks it with ASGI and WSGI middleware. The only runtime dependency is `cryptog
 newer (the test suite runs on 3.10+).
 
 ```sh
-pip install assay-provider-verify
+pip install goassay-provider-verify
 ```
 
 Rejected requests get `401`, `content-type: application/json` and
@@ -16,7 +16,7 @@ with the full body still readable.
 ## One line per framework
 
 ```python
-from assay_provider_verify import AssayVerifyMiddleware, AssayVerifyWSGI
+from goassay_provider_verify import AssayVerifyMiddleware, AssayVerifyWSGI
 
 app.add_middleware(AssayVerifyMiddleware)                # FastAPI / Starlette (ASGI)
 app.wsgi_app = AssayVerifyWSGI(app.wsgi_app)             # Flask (WSGI)
@@ -26,7 +26,7 @@ application = AssayVerifyWSGI(get_wsgi_application())    # Django, in wsgi.py
 Without a framework, call the verifier yourself:
 
 ```python
-from assay_provider_verify import Verifier
+from goassay_provider_verify import Verifier
 
 result = Verifier().verify(method, url, headers, body)  # url = path + query; body = raw bytes or None
 if not result.ok:
@@ -35,7 +35,7 @@ if not result.ok:
 
 Testnet keys: pass `environment="testnet"`. Behind a proxy that rewrites `Host`, pass
 `authority="api.example.com"`. With more than one instance, use `redis_replay_store`
-(`pip install "assay-provider-verify[redis]"`).
+(`pip install "goassay-provider-verify[redis]"`).
 
 ## Documentation
 

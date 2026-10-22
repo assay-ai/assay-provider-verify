@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from assay_provider_verify import MemoryReplayStore, RejectReason, Verifier
+from goassay_provider_verify import MemoryReplayStore, RejectReason, Verifier
 
 VECTORS = Path(__file__).resolve().parents[2] / "test-vectors"
 V1 = json.loads((VECTORS / "v1.json").read_text())

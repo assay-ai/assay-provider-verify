@@ -4,7 +4,7 @@ Verify Assay request signatures with a few lines of middleware. The only runtime
 `cryptography`; frameworks and Redis are optional.
 
 ```sh
-pip install assay-provider-verify
+pip install goassay-provider-verify
 ```
 
 Python 3.9 or newer. Rejected requests get `401`, `content-type: application/json` and
@@ -14,7 +14,7 @@ unchanged, with the full body still readable.
 ## FastAPI / Starlette (ASGI)
 
 ```python
-from assay_provider_verify import AssayVerifyMiddleware
+from goassay_provider_verify import AssayVerifyMiddleware
 
 app.add_middleware(AssayVerifyMiddleware)
 ```
@@ -25,7 +25,7 @@ The middleware buffers the body, verifies, then replays the same bytes to your a
 ## Flask / Django (WSGI)
 
 ```python
-from assay_provider_verify import AssayVerifyWSGI
+from goassay_provider_verify import AssayVerifyWSGI
 
 app.wsgi_app = AssayVerifyWSGI(app.wsgi_app)          # Flask
 # Django: in wsgi.py -> application = AssayVerifyWSGI(get_wsgi_application())
@@ -56,7 +56,7 @@ attempt waits 5 s.
 ## Without a framework
 
 ```python
-from assay_provider_verify import Verifier
+from goassay_provider_verify import Verifier
 
 verifier = Verifier()
 result = verifier.verify(method, url, headers, body)   # body: bytes, or None when the request has none
@@ -77,14 +77,14 @@ instance, use a shared store so a nonce replayed against another instance is sti
 
 ```python
 import redis
-from assay_provider_verify import AssayVerifyMiddleware, redis_replay_store
+from goassay_provider_verify import AssayVerifyMiddleware, redis_replay_store
 
 r = redis.Redis.from_url(os.environ["REDIS_URL"])
 app.add_middleware(AssayVerifyMiddleware, replay_store=redis_replay_store(r))  # key prefix "assay:nonce:"
 ```
 
 `redis_replay_store(client, prefix="assay:nonce:")` uses `SET key 1 NX EX <ttl>` and works with any
-redis-py compatible client (`pip install "assay-provider-verify[redis]"`). Redis errors are not
+redis-py compatible client (`pip install "goassay-provider-verify[redis]"`). Redis errors are not
 swallowed: verification fails closed.
 
 Use a sync client (`redis.Redis`, not `redis.asyncio.Redis`), also under FastAPI/Starlette. The ASGI

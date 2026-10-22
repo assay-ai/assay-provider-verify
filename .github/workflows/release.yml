@@ -2,7 +2,7 @@ name: Release
 
 # Push a tag to publish one package:
 #   node/v0.1.0    -> npm  @goassay-ai/provider-verify
-#   python/v0.1.0  -> PyPI assay-provider-verify
+#   python/v0.1.0  -> PyPI goassay-provider-verify
 #   go/v0.1.0      -> Go module (the tag itself is the release)
 on:
   push:

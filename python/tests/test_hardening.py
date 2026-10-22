@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from assay_provider_verify import MemoryReplayStore, RejectReason, Verifier, jwks as jwks_mod
-from assay_provider_verify.replay import redis_replay_store
+from goassay_provider_verify import MemoryReplayStore, RejectReason, Verifier, jwks as jwks_mod
+from goassay_provider_verify.replay import redis_replay_store
 
 V1 = json.loads((Path(__file__).resolve().parents[2] / "test-vectors" / "v1.json").read_text())
 SEED = bytes.fromhex(V1["seedHex"])
@@ -92,7 +92,7 @@ def test_empty_body_present_requires_digest():
 
 
 def test_replay_shared_default_store(monkeypatch):
-    from assay_provider_verify import core
+    from goassay_provider_verify import core
     monkeypatch.setattr(core, "_DEFAULT_REPLAY", MemoryReplayStore())
     req = sign(nonce="shared")
     a = Verifier(jwks={"keys": [JWK]}, now=lambda: 1000)
@@ -237,7 +237,7 @@ def test_asgi_slow_jwks_fetch_does_not_block_event_loop(monkeypatch):
     import asyncio
     import threading
 
-    from assay_provider_verify.asgi import AssayVerifyMiddleware
+    from goassay_provider_verify.asgi import AssayVerifyMiddleware
 
     released = threading.Event()
     seen = {}

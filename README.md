@@ -13,7 +13,7 @@ Assay signs every request it forwards to your API with an Ed25519 signature (HTT
 
 ## Quick start
 
-Packages: npm `@goassay-ai/provider-verify`, PyPI `assay-provider-verify`, Go `github.com/assay-ai/assay-provider-verify/go`. Each package folder (`node/`, `python/`, `go/`, `worker/`) has its own README with the lines to add for your framework.
+Packages: npm `@goassay-ai/provider-verify`, PyPI `goassay-provider-verify` (import `goassay_provider_verify`), Go `github.com/assay-ai/assay-provider-verify/go`. Each package folder (`node/`, `python/`, `go/`, `worker/`) has its own README with the lines to add for your framework.
 
 Keys are fetched automatically from:
 
@@ -46,6 +46,7 @@ For maintainers.
 
 - Tag `node/vX.Y.Z`, `python/vX.Y.Z` or `go/vX.Y.Z` to publish that package (`.github/workflows/release.yml`). Go needs only the tag.
 - npm uses trusted publishing (OIDC): npmjs.com trusts `release.yml` in this repository, so no npm token is stored anywhere; a tag for a version already on npm is skipped. PyPI uses trusted publishing (preferred) or a `PYPI_TOKEN` secret.
+- PyPI project name: `goassay-provider-verify`. Before the first `python/v*` tag, add a pending publisher on pypi.org for project `goassay-provider-verify`: owner `assay-ai`, repository `assay-provider-verify`, workflow `release.yml`, environment `pypi`.
 - `worker/package.json` pins the published package; after releasing a new version, bump it there too.
 - Check the Deploy button's subdirectory URL and the free-plan limits quoted in [docs/level-0-cloudflare-worker.md](docs/level-0-cloudflare-worker.md) against Cloudflare's current documentation.
 

@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "assay-provider-verify"
+name = "goassay-provider-verify"
 version = "0.1.0"
 description = "Verify Assay Ed25519 request signatures (RFC 9421 style) with ASGI and WSGI middleware."
 readme = "README.md"
@@ -31,7 +31,7 @@ Issues = "https://github.com/assay-ai/assay-provider-verify/issues"
 where = ["src"]
 
 [tool.setuptools.package-data]
-assay_provider_verify = ["py.typed"]
+goassay_provider_verify = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

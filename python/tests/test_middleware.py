@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from assay_provider_verify import AssayVerifyMiddleware, AssayVerifyWSGI, MemoryReplayStore
+from goassay_provider_verify import AssayVerifyMiddleware, AssayVerifyWSGI, MemoryReplayStore
 
 V1 = json.loads((Path(__file__).resolve().parents[2] / "test-vectors" / "v1.json").read_text())
 CASE = next(c for c in V1["cases"] if c["name"] == "post-json-body")
@@ -139,7 +139,7 @@ def test_wsgi_get_without_body_reaches_app():
 def _wsgi_post(extra_environ, stream, **kw):
     import hashlib, base64
     from test_hardening import sign, JWK
-    from assay_provider_verify import MemoryReplayStore
+    from goassay_provider_verify import MemoryReplayStore
 
     body = b'{"a":1}'
     m, t, h, b = sign(method="POST", target="/caf%C3%A9", body=body, nonce=kw.get("nonce", "w1"))
