@@ -3,6 +3,7 @@ package assayverify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -68,7 +69,8 @@ func TestPositiveVectors(t *testing.T) {
 			Name    string     `json:"name"`
 			Request vecRequest `json:"request"`
 			Params  struct {
-				Created int64 `json:"created"`
+				Created  int64  `json:"created"`
+				Audience string `json:"audience"`
 			} `json:"params"`
 			Expected struct {
 				Headers map[string]string `json:"headers"`
@@ -83,6 +85,7 @@ func TestPositiveVectors(t *testing.T) {
 		t.Run(c.Name, func(t *testing.T) {
 			created := c.Params.Created
 			v, err := New(Options{
+				Providers:   []string{c.Params.Audience},
 				JWKS:        staticJWKS(t, f.PublicKeyJWK),
 				ReplayStore: NewMemoryReplayStore(10),
 				Now:         func() time.Time { return time.Unix(created, 0) },
@@ -91,12 +94,38 @@ func TestPositiveVectors(t *testing.T) {
 				t.Fatal(err)
 			}
 			r, body := c.Request.toRequest(c.Expected.Headers)
-			kid, callID, reason, err := v.Verify(r, body)
-			if err != nil || reason != "" {
-				t.Fatalf("reason=%q err=%v", reason, err)
+			res, err := v.Verify(r, body)
+			if err != nil || !res.OK() {
+				t.Fatalf("reason=%q err=%v", res.Reason, err)
 			}
-			if kid != f.KeyID || callID != "c-1" {
-				t.Fatalf("kid=%q call=%q", kid, callID)
+			if res.KeyID != f.KeyID || res.CallID != "c-1" || res.ProviderID != c.Params.Audience {
+				t.Fatalf("result=%+v", res)
+			}
+			// A list that contains the provider passes.
+			v2, err := New(Options{
+				Providers:   []string{"prov-other", c.Params.Audience},
+				JWKS:        staticJWKS(t, f.PublicKeyJWK),
+				ReplayStore: NewMemoryReplayStore(10),
+				Now:         func() time.Time { return time.Unix(created, 0) },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res, err := v2.Verify(r, body); err != nil || res.ProviderID != c.Params.Audience {
+				t.Fatalf("list: result=%+v err=%v", res, err)
+			}
+			// Another provider is WRONG_PROVIDER.
+			v3, err := New(Options{
+				Providers:   []string{"prov-other", "prov-test-2"},
+				JWKS:        staticJWKS(t, f.PublicKeyJWK),
+				ReplayStore: NewMemoryReplayStore(10),
+				Now:         func() time.Time { return time.Unix(created, 0) },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res, err := v3.Verify(r, body); err != nil || res.Reason != ReasonWrongProvider || res.ProviderID != "" {
+				t.Fatalf("other provider: result=%+v err=%v", res, err)
 			}
 		})
 	}
@@ -110,6 +139,7 @@ func TestNegativeVectors(t *testing.T) {
 	}
 	var f struct {
 		PublicKeyJWK map[string]any `json:"publicKeyJwk"`
+		Provider     string         `json:"provider"`
 		Cases        []struct {
 			Name     string `json:"name"`
 			Sequence []step `json:"sequence"`
@@ -125,6 +155,7 @@ func TestNegativeVectors(t *testing.T) {
 			}
 			var now atomic.Int64
 			v, err := New(Options{
+				Providers:   []string{f.Provider},
 				JWKS:        staticJWKS(t, f.PublicKeyJWK),
 				ReplayStore: NewMemoryReplayStore(10),
 				Now:         func() time.Time { return time.Unix(now.Load(), 0) },
@@ -135,11 +166,11 @@ func TestNegativeVectors(t *testing.T) {
 			for i, s := range steps {
 				now.Store(s.Now)
 				r, body := s.Request.toRequest(nil)
-				_, _, reason, err := v.Verify(r, body)
+				res, err := v.Verify(r, body)
 				if err != nil {
 					t.Fatal(err)
 				}
-				got := string(reason)
+				got := string(res.Reason)
 				if got == "" {
 					got = "OK"
 				}
@@ -150,6 +181,9 @@ func TestNegativeVectors(t *testing.T) {
 		})
 	}
 }
+
+// testProvider is the audience of the first positive vector.
+const testProvider = "prov-test-1"
 
 // signedCase returns the first positive vector with its signature headers applied.
 func firstVector(t *testing.T) (map[string]any, *http.Request, []byte, int64) {
@@ -170,7 +204,7 @@ func firstVector(t *testing.T) (map[string]any, *http.Request, []byte, int64) {
 
 func newFirst(t *testing.T, mutate func(*Options)) (*Verifier, *http.Request, []byte) {
 	jwk, r, body, created := firstVector(t)
-	o := Options{JWKS: staticJWKS(t, jwk), ReplayStore: NewMemoryReplayStore(10), Now: func() time.Time { return time.Unix(created, 0) }}
+	o := Options{Providers: []string{testProvider}, JWKS: staticJWKS(t, jwk), ReplayStore: NewMemoryReplayStore(10), Now: func() time.Time { return time.Unix(created, 0) }}
 	if mutate != nil {
 		mutate(&o)
 	}
@@ -198,9 +232,9 @@ func TestRejects(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			v, r, body := newFirst(t, nil)
 			c.mutate(r)
-			_, _, reason, err := v.Verify(r, body)
-			if err != nil || reason != c.want {
-				t.Fatalf("got %q err=%v want %q", reason, err, c.want)
+			res, err := v.Verify(r, body)
+			if err != nil || res.Reason != c.want {
+				t.Fatalf("got %q err=%v want %q", res.Reason, err, c.want)
 			}
 		})
 	}
@@ -209,8 +243,8 @@ func TestRejects(t *testing.T) {
 func TestAuthorityOption(t *testing.T) {
 	v, r, body := newFirst(t, func(o *Options) { o.Authority = "API.Example.test" })
 	r.Host = "internal:8080"
-	if _, _, reason, err := v.Verify(r, body); err != nil || reason != "" {
-		t.Fatalf("reason=%q err=%v", reason, err)
+	if res, err := v.Verify(r, body); err != nil || !res.OK() {
+		t.Fatalf("reason=%q err=%v", res.Reason, err)
 	}
 }
 
@@ -219,13 +253,13 @@ func TestBadKeyLengthIsSkipped(t *testing.T) {
 	bad, _ := json.Marshal(map[string]any{"keys": []any{
 		map[string]any{"kty": "OKP", "crv": "Ed25519", "kid": jwk["kid"], "x": "AAAA"},
 	}})
-	v, err := New(Options{JWKS: bad, ReplayStore: NewMemoryReplayStore(10), Now: func() time.Time { return time.Unix(created, 0) }})
+	v, err := New(Options{Providers: []string{testProvider}, JWKS: bad, ReplayStore: NewMemoryReplayStore(10), Now: func() time.Time { return time.Unix(created, 0) }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, reason, err := v.Verify(r, body)
-	if err != nil || reason != ReasonUnknownKey {
-		t.Fatalf("got %q err=%v", reason, err)
+	res, err := v.Verify(r, body)
+	if err != nil || res.Reason != ReasonUnknownKey {
+		t.Fatalf("got %q err=%v", res.Reason, err)
 	}
 }
 
@@ -235,17 +269,17 @@ func TestDefaultReplayStoreIsShared(t *testing.T) {
 	t.Cleanup(func() { defaultReplay = saved })
 	jwk, r, body, created := firstVector(t)
 	mk := func() *Verifier {
-		v, err := New(Options{JWKS: staticJWKS(t, jwk), Now: func() time.Time { return time.Unix(created, 0) }})
+		v, err := New(Options{Providers: []string{testProvider}, JWKS: staticJWKS(t, jwk), Now: func() time.Time { return time.Unix(created, 0) }})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return v
 	}
-	if _, _, reason, _ := mk().Verify(r, body); reason != "" {
-		t.Fatal(reason)
+	if res, _ := mk().Verify(r, body); !res.OK() {
+		t.Fatal(res.Reason)
 	}
-	if _, _, reason, _ := mk().Verify(r, body); reason != ReasonReplayed {
-		t.Fatalf("second verifier: %q", reason)
+	if res, _ := mk().Verify(r, body); res.Reason != ReasonReplayed {
+		t.Fatalf("second verifier: %q", res.Reason)
 	}
 }
 
@@ -257,7 +291,7 @@ func (errStore) CheckAndStore(context.Context, string, time.Duration) (bool, err
 
 func TestReplayStoreErrorFailsClosed(t *testing.T) {
 	v, r, body := newFirst(t, func(o *Options) { o.ReplayStore = errStore{} })
-	if _, _, _, err := v.Verify(r, body); err == nil {
+	if _, err := v.Verify(r, body); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -294,20 +328,20 @@ func TestJWKSFetchBackoffAndRecovery(t *testing.T) {
 	defer srv.Close()
 	var now atomic.Int64
 	now.Store(created)
-	v, err := New(Options{JWKSURL: srv.URL + "/k.json", ReplayStore: NewMemoryReplayStore(10), Now: func() time.Time { return time.Unix(now.Load(), 0) }})
+	v, err := New(Options{Providers: []string{testProvider}, JWKSURL: srv.URL + "/k.json", ReplayStore: NewMemoryReplayStore(10), Now: func() time.Time { return time.Unix(now.Load(), 0) }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, reason, _ := v.Verify(r, body); reason != ReasonUnknownKey {
-		t.Fatal(reason)
+	if res, _ := v.Verify(r, body); res.Reason != ReasonUnknownKey {
+		t.Fatal(res.Reason)
 	}
-	if _, _, reason, _ := v.Verify(r, body); reason != ReasonUnknownKey || hits.Load() != 1 {
-		t.Fatalf("backoff: %q hits=%d", reason, hits.Load())
+	if res, _ := v.Verify(r, body); res.Reason != ReasonUnknownKey || hits.Load() != 1 {
+		t.Fatalf("backoff: %q hits=%d", res.Reason, hits.Load())
 	}
 	fail.Store(false)
 	now.Store(created + 6)
-	if _, _, reason, _ := v.Verify(r, body); reason != "" || hits.Load() != 2 {
-		t.Fatalf("recovery: %q hits=%d", reason, hits.Load())
+	if res, _ := v.Verify(r, body); !res.OK() || hits.Load() != 2 {
+		t.Fatalf("recovery: %q hits=%d", res.Reason, hits.Load())
 	}
 }
 
@@ -323,7 +357,22 @@ func TestUnpaddedSignatureMatchesNode(t *testing.T) {
 	v, r, body := newFirst(t, nil)
 	sig := strings.TrimRight(r.Header.Get("Signature"), ":")
 	r.Header.Set("Signature", strings.TrimRight(sig, "=")+":")
-	if _, _, reason, err := v.Verify(r, body); err != nil || reason != "" {
-		t.Fatalf("unpadded: %q %v", reason, err)
+	if res, err := v.Verify(r, body); err != nil || !res.OK() {
+		t.Fatalf("unpadded: %q %v", res.Reason, err)
+	}
+}
+
+func TestProvidersRequired(t *testing.T) {
+	jwk, _, _, _ := firstVector(t)
+	if _, err := New(Options{JWKS: staticJWKS(t, jwk)}); !errors.Is(err, ErrNoProvider) {
+		t.Fatalf("New without Providers: %v", err)
+	}
+	if _, err := Middleware(Options{JWKS: staticJWKS(t, jwk)}); !errors.Is(err, ErrNoProvider) {
+		t.Fatalf("Middleware without Providers: %v", err)
+	}
+	for _, bad := range [][]string{{""}, {"ok", ""}, {"has space"}, {"a,b"}, {strings.Repeat("x", 129)}, {"ok\n"}} {
+		if _, err := New(Options{Providers: bad, JWKS: staticJWKS(t, jwk)}); err == nil {
+			t.Errorf("Providers %q should fail", bad)
+		}
 	}
 }

@@ -15,7 +15,8 @@ func writeJSON(w http.ResponseWriter, status int, body string) {
 // Middleware returns net/http middleware that verifies every request. Rejected
 // requests get 401 with {"error":"invalid_assay_signature","reason":"<CODE>"};
 // bodies over MaxBodyBytes get 413 before verification. Accepted requests reach
-// the handler with r.Body restored.
+// the handler with r.Body restored. Like New, it fails when Options.Providers
+// is empty.
 func Middleware(opts Options) (func(http.Handler) http.Handler, error) {
 	v, err := New(opts)
 	if err != nil {
@@ -47,13 +48,13 @@ func Middleware(opts Options) (func(http.Handler) http.Handler, error) {
 				}
 				body = b
 			}
-			_, _, reason, err := v.Verify(r, body)
+			res, err := v.Verify(r, body)
 			if err != nil {
 				writeJSON(w, http.StatusInternalServerError, `{"error":"assay_verify_failed"}`)
 				return
 			}
-			if reason != "" {
-				writeJSON(w, http.StatusUnauthorized, `{"error":"invalid_assay_signature","reason":"`+string(reason)+`"}`)
+			if !res.OK() {
+				writeJSON(w, http.StatusUnauthorized, `{"error":"invalid_assay_signature","reason":"`+string(res.Reason)+`"}`)
 				return
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))

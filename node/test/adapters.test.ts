@@ -16,7 +16,7 @@ const v1 = JSON.parse(readFileSync(new URL("../../test-vectors/v1.json", import.
 const c = v1.cases[0];
 const u = new URL(c.request.url);
 const path = u.pathname + u.search;
-const opts: VerifyOptions = { jwks: { keys: [v1.publicKeyJwk] }, now: () => c.params.created, authority: "api.example.test" };
+const opts: VerifyOptions = { provider: c.params.audience, jwks: { keys: [v1.publicKeyJwk] }, now: () => c.params.created, authority: "api.example.test" };
 const REJECT = '{"error":"invalid_assay_signature","reason":"DIGEST_MISMATCH"}';
 
 const rawSeen: Buffer[] = [];
@@ -160,6 +160,48 @@ describe("authority option", () => {
   });
 });
 
+describe("provider option", () => {
+  it("express, hono and next throw at construction without provider", () => {
+    const noProvider = { jwks: opts.jwks } as unknown as VerifyOptions;
+    expect(() => expressVerify(noProvider)).toThrow(/provider/);
+    expect(() => honoVerify(noProvider)).toThrow(/provider/);
+    expect(() => withAssayVerify(async () => new Response("ok"), noProvider)).toThrow(/provider/);
+  });
+  it("fastify fails to register without provider", async () => {
+    const app = Fastify();
+    await expect(app.register(assayVerifyPlugin, { jwks: opts.jwks } as unknown as VerifyOptions)).rejects.toThrow(/provider/);
+  });
+  for (const [name, start] of [
+    ["express", async (o: VerifyOptions) => {
+      const app = express();
+      app.use(expressVerify(o));
+      app.post("/v1/search", (req, res) => res.json(req.body));
+      return listen(createServer(app));
+    }],
+    ["fastify", async (o: VerifyOptions) => {
+      const app = Fastify();
+      await app.register(assayVerifyPlugin, o);
+      app.post("/v1/search", async (req) => req.body);
+      await app.listen({ port: 0, host: "127.0.0.1" });
+      closers.push(() => app.close());
+      return (app.server.address() as AddressInfo).port;
+    }],
+    ["hono", async (o: VerifyOptions) => {
+      const app = new Hono();
+      app.use("*", honoVerify(o) as never);
+      app.post("/v1/search", async (ctx) => ctx.json(await ctx.req.json()));
+      return listen(fetchServer((r) => Promise.resolve(app.fetch(r))));
+    }],
+    ["next", async (o: VerifyOptions) => listen(fetchServer(withAssayVerify(async (req) => Response.json(await req.json()), o)))],
+  ] as const) {
+    it(`${name} rejects another provider with 401 WRONG_PROVIDER`, async () => {
+      const r = await send(await start({ ...opts, provider: "prov-other" }));
+      expect(r.status).toBe(401);
+      expect(r.text).toBe('{"error":"invalid_assay_signature","reason":"WRONG_PROVIDER"}');
+    });
+  }
+});
+
 describe("express misconfiguration", () => {
   it("returns 500 when a body parser ran first", async () => {
     const app = express();
@@ -242,7 +284,7 @@ describe("express body handling", () => {
 describe("empty body is still a body (content-digest covered)", () => {
   const e = v1.cases.find((x: { name: string }) => x.name === "empty-string-body");
   const eu = new URL(e.request.url);
-  const eopts: VerifyOptions = { jwks: { keys: [v1.publicKeyJwk] }, now: () => e.params.created, authority: eu.host };
+  const eopts: VerifyOptions = { provider: e.params.audience, jwks: { keys: [v1.publicKeyJwk] }, now: () => e.params.created, authority: eu.host };
   const hit = async (port: number) => {
     const res = await fetch(`http://127.0.0.1:${port}${eu.pathname}`, {
       method: e.request.method,

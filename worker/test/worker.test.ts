@@ -6,7 +6,7 @@ import { NonceStore, ReplayStoreUnavailableError, createWorker, durableReplaySto
 
 const v1 = JSON.parse(readFileSync(new URL("../../test-vectors/v1.json", import.meta.url), "utf8"));
 const c = v1.cases[0];
-const env: Env = { ORIGIN_URL: "https://origin.example.com" };
+const env: Env = { ORIGIN_URL: "https://origin.example.com", ASSAY_PROVIDER_ID: c.params.audience };
 
 function opts() {
   return { jwks: { keys: [v1.publicKeyJwk] }, now: () => c.params.created, replayStore: new MemoryReplayStore() };
@@ -91,6 +91,62 @@ describe("worker", () => {
     originFetch.mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "https://x.test/" } }));
     const res = await createWorker(opts()).fetch(signed(), env);
     expect(res.status).toBe(302);
+  });
+});
+
+describe("ASSAY_PROVIDER_ID", () => {
+  for (const [name, value] of [["missing", undefined], ["empty", ""], ["only commas and spaces", " , ,"]] as const) {
+    it(`${name}: answers 500 and never calls the origin`, async () => {
+      const res = await createWorker(opts()).fetch(signed(), { ...env, ASSAY_PROVIDER_ID: value });
+      expect(res.status).toBe(500);
+      expect(res.headers.get("content-type")).toBe("application/json");
+      const body = JSON.parse(await res.text());
+      expect(body.error).toBe("assay_verify_misconfigured");
+      expect(body.message).toContain("ASSAY_PROVIDER_ID is not set");
+      expect(originFetch).not.toHaveBeenCalled();
+    });
+  }
+
+  it("invalid id: answers 500 without echoing it and never calls the origin", async () => {
+    const res = await createWorker(opts()).fetch(signed(), { ...env, ASSAY_PROVIDER_ID: "bad id!" });
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(text).toContain("ASSAY_PROVIDER_ID is invalid");
+    expect(text).not.toContain("bad id!");
+    expect(originFetch).not.toHaveBeenCalled();
+  });
+
+  it("another provider: 401 WRONG_PROVIDER and no origin call", async () => {
+    const res = await createWorker(opts()).fetch(signed(), { ...env, ASSAY_PROVIDER_ID: "prov-other" });
+    expect(res.status).toBe(401);
+    expect(await res.text()).toBe('{"error":"invalid_assay_signature","reason":"WRONG_PROVIDER"}');
+    expect(originFetch).not.toHaveBeenCalled();
+  });
+
+  it("a comma-separated list containing the provider is forwarded", async () => {
+    const res = await createWorker(opts()).fetch(signed(), { ...env, ASSAY_PROVIDER_ID: ` prov-other , ${c.params.audience} ` });
+    expect(res.status).toBe(200);
+    expect(originFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("the cached verifier follows a changed ASSAY_PROVIDER_ID", async () => {
+    const seen = new Set<string>();
+    const ns = {
+      idFromName: (n: string) => n,
+      get: () => ({
+        fetch: async (_u: string, init: { body: string }) => {
+          const { nonce } = JSON.parse(init.body);
+          const dup = seen.has(nonce);
+          seen.add(nonce);
+          return Response.json({ seen: dup });
+        },
+      }),
+    } as unknown as DurableObjectNamespace;
+    const w = createWorker({ now: () => c.params.created, fetch: async () => Response.json({ keys: [v1.publicKeyJwk] }) });
+    const wrong = await w.fetch(signed(), { ...env, NONCE_STORE: ns, ASSAY_PROVIDER_ID: "prov-other" });
+    expect(await wrong.text()).toContain("WRONG_PROVIDER");
+    const right = await w.fetch(signed(), { ...env, NONCE_STORE: ns });
+    expect(right.status).toBe(200);
   });
 });
 

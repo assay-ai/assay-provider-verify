@@ -24,7 +24,7 @@ async function readBody(req: IncomingMessage, max: number): Promise<Buffer | nul
 }
 
 /** Express middleware. Mount BEFORE body parsers: it buffers the raw body, verifies, sets req.rawBody. */
-export function assayVerify(options: AdapterOptions = {}): (req: Req, res: ServerResponse, next: Next) => void {
+export function assayVerify(options: AdapterOptions): (req: Req, res: ServerResponse, next: Next) => void {
   const verify = createVerifier(options);
   const max = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const run = async (req: Req, res: ServerResponse, next: Next): Promise<void> => {

@@ -13,8 +13,11 @@ PATH = "/v1/search?q=a%20b"
 
 
 def opts(**kw):
-    return dict(jwks={"keys": [V1["publicKeyJwk"]]}, now=lambda: CASE["params"]["created"],
-                replay_store=MemoryReplayStore(), authority="api.example.test", **kw)
+    base = dict(provider=CASE["params"]["audience"], jwks={"keys": [V1["publicKeyJwk"]]},
+                now=lambda: CASE["params"]["created"], replay_store=MemoryReplayStore(),
+                authority="api.example.test")
+    base.update(kw)
+    return base
 
 
 def fastapi_client(**kw):
@@ -124,7 +127,8 @@ def test_wsgi_get_without_body_reaches_app():
         start_response("200 OK", [("content-type", "text/plain")])
         return [b"ok"]
 
-    mw = AssayVerifyWSGI(app, jwks={"keys": [V1["publicKeyJwk"]]}, now=lambda: case["params"]["created"],
+    mw = AssayVerifyWSGI(app, provider=case["params"]["audience"], jwks={"keys": [V1["publicKeyJwk"]]},
+                         now=lambda: case["params"]["created"],
                          replay_store=MemoryReplayStore())
     h = {**case["request"]["headers"], **case["expected"]["headers"], "host": "api.example.test"}
     environ = {"REQUEST_METHOD": "GET", "PATH_INFO": "/items", "QUERY_STRING": "id=1&x=%2F",
@@ -138,7 +142,7 @@ def test_wsgi_get_without_body_reaches_app():
 
 def _wsgi_post(extra_environ, stream, **kw):
     import hashlib, base64
-    from test_hardening import sign, JWK
+    from test_hardening import sign, JWK, PROVIDER
     from goassay_provider_verify import MemoryReplayStore
 
     body = b'{"a":1}'
@@ -151,7 +155,7 @@ def _wsgi_post(extra_environ, stream, **kw):
         start_response("200 OK", [])
         return [b""]
 
-    mw = AssayVerifyWSGI(app, jwks={"keys": [JWK]}, now=lambda: 1000, replay_store=MemoryReplayStore())
+    mw = AssayVerifyWSGI(app, provider=PROVIDER, jwks={"keys": [JWK]}, now=lambda: 1000, replay_store=MemoryReplayStore())
     import io
     environ = {"REQUEST_METHOD": "POST", "PATH_INFO": "/caf\xc3\xa9", "QUERY_STRING": "",
                "wsgi.input": io.BytesIO(stream)}
@@ -176,3 +180,32 @@ def test_wsgi_chunked_terminated_input_is_read_to_eof():
 def test_wsgi_chunked_unterminated_input_not_read():
     status, seen, body = _wsgi_post({"HTTP_TRANSFER_ENCODING": "chunked"}, b'{"a":1}')
     assert status.startswith("401")  # empty body vs signed digest
+
+
+WRONG_PROVIDER = '{"error":"invalid_assay_signature","reason":"WRONG_PROVIDER"}'
+
+
+def test_fastapi_wrong_provider():
+    r = fastapi_client(provider="prov-other").post(PATH, content=BODY, headers=SIGNED)
+    assert r.status_code == 401
+    assert r.text == WRONG_PROVIDER
+
+
+def test_flask_wrong_provider():
+    r = flask_client(provider=["prov-other"]).post(PATH, data=BODY, headers=SIGNED)
+    assert r.status_code == 401
+    assert r.get_data(as_text=True) == WRONG_PROVIDER
+
+
+def test_flask_provider_list_passes():
+    r = flask_client(provider=["prov-other", CASE["params"]["audience"]]).post(PATH, data=BODY, headers=SIGNED)
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+
+def test_middleware_requires_provider():
+    kw = opts()
+    del kw["provider"]
+    with pytest.raises(TypeError, match="provider"):
+        AssayVerifyWSGI(lambda e, s: [], **kw)
+    with pytest.raises(TypeError, match="provider"):
+        AssayVerifyMiddleware(lambda *a: None, **kw)

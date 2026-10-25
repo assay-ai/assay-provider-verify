@@ -12,7 +12,8 @@ import (
 func middlewareFor(t *testing.T, mutate func(*Options)) (http.Handler, *int, *string) {
 	jwk, _, _, created := firstVector(t)
 	o := Options{
-		JWKS: staticJWKS(t, jwk), ReplayStore: NewMemoryReplayStore(10),
+		Providers: []string{testProvider},
+		JWKS:      staticJWKS(t, jwk), ReplayStore: NewMemoryReplayStore(10),
 		Now: func() time.Time { return time.Unix(created, 0) },
 	}
 	if mutate != nil {
@@ -99,5 +100,17 @@ func TestMiddlewareStoreErrorFailsClosed(t *testing.T) {
 	_, r, body, _ := firstVector(t)
 	if rec := serve(h, r, body); rec.Code != 500 || *calls != 0 {
 		t.Fatalf("code=%d", rec.Code)
+	}
+}
+
+func TestMiddlewareWrongProvider(t *testing.T) {
+	h, calls, _ := middlewareFor(t, func(o *Options) { o.Providers = []string{"prov-other"} })
+	_, r, body, _ := firstVector(t)
+	rec := serve(h, r, body)
+	if rec.Code != 401 || *calls != 0 {
+		t.Fatalf("code=%d calls=%d", rec.Code, *calls)
+	}
+	if got := rec.Body.String(); got != `{"error":"invalid_assay_signature","reason":"WRONG_PROVIDER"}` {
+		t.Fatal(got)
 	}
 }

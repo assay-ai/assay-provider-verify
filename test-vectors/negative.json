@@ -1,6 +1,7 @@
 {
-  "format": "Each case runs against a FRESH verifier (empty nonce store) configured with publicKeyJwk below. A case with \"request\" is verified once at unix time \"now\" and must give \"expectedReason\" (\"OK\" = accepted). A case with \"sequence\" is a list of steps verified in order against the same verifier; each step has request, now and expectedReason. Header names in request.headers are lowercase; host is the value of the Host header and is used as @authority. body is a UTF-8 string and absent when the request has no body.",
+  "format": "Each case runs against a FRESH verifier (empty nonce store) configured with publicKeyJwk below and with exactly one provider id, \"provider\" below. A case with \"request\" is verified once at unix time \"now\" and must give \"expectedReason\" (\"OK\" = accepted). A case with \"sequence\" is a list of steps verified in order against the same verifier; each step has request, now and expectedReason. Header names in request.headers are lowercase; host is the value of the Host header and is used as @authority. body is a UTF-8 string and absent when the request has no body.",
   "keyId": "test-2026-10",
+  "provider": "prov-test-1",
   "publicKeyJwk": {
     "kty": "OKP",
     "crv": "Ed25519",
@@ -20,8 +21,8 @@
           "host": "api.example.test",
           "x-assay-call-id": "c-1",
           "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
-          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\"",
-          "signature": "assay=:CDZYt+dx4DbPldtcvKsgzOTX5bXDgMHID1KY71iM4AfPs/Gdexjxo2ARL6HbLyFhUNVXRb8w7rxlxlqTruxDDA==:"
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\";aud=\"prov-test-1\"",
+          "signature": "assay=:IFxcqvc1PcRd67uZmHG1tjUcnDTM2wxLYl5JIOss4lUJdbCwNailgWR3RVZkDLsPg2mlNbnH3cTWhmhEvhrwAQ==:"
         },
         "body": "{\"q\":\"tampered\"}"
       },
@@ -38,8 +39,8 @@
           "host": "other.example.test",
           "x-assay-call-id": "c-1",
           "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
-          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\"",
-          "signature": "assay=:CDZYt+dx4DbPldtcvKsgzOTX5bXDgMHID1KY71iM4AfPs/Gdexjxo2ARL6HbLyFhUNVXRb8w7rxlxlqTruxDDA==:"
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\";aud=\"prov-test-1\"",
+          "signature": "assay=:IFxcqvc1PcRd67uZmHG1tjUcnDTM2wxLYl5JIOss4lUJdbCwNailgWR3RVZkDLsPg2mlNbnH3cTWhmhEvhrwAQ==:"
         },
         "body": "{\"q\":\"a b\"}"
       },
@@ -56,8 +57,8 @@
           "host": "api.example.test",
           "x-assay-call-id": "c-1",
           "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
-          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"other\"",
-          "signature": "assay=:nXp1SZr0UM6xQLODJ/3NVoYahgfuVtsxyEyXnegzdOmQLK88V91wdy1L5VTXBg/b25N4sUmxmRzRzPOb4PxcCw==:"
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"other\";aud=\"prov-test-1\"",
+          "signature": "assay=:IAE1/JRxZeVE1is5kyqDGZyefnDt/koEg7YG0OYco000FM9560kdBdIUgQmqHcNp4srXE2+UTTFY1bzTyF9+Bg==:"
         },
         "body": "{\"q\":\"a b\"}"
       },
@@ -74,8 +75,8 @@
           "host": "api.example.test",
           "x-assay-call-id": "c-1",
           "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
-          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\"",
-          "signature": "assay=:CDZYt+dx4DbPldtcvKsgzOTX5bXDgMHID1KY71iM4AfPs/Gdexjxo2ARL6HbLyFhUNVXRb8w7rxlxlqTruxDDA==:"
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\";aud=\"prov-test-1\"",
+          "signature": "assay=:IFxcqvc1PcRd67uZmHG1tjUcnDTM2wxLYl5JIOss4lUJdbCwNailgWR3RVZkDLsPg2mlNbnH3cTWhmhEvhrwAQ==:"
         },
         "body": "{\"q\":\"a b\"}"
       },
@@ -92,8 +93,8 @@
           "host": "api.example.test",
           "x-assay-call-id": "c-1",
           "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
-          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\"",
-          "signature": "assay=:CDZYt+dx4DbPldtcvKsgzOTX5bXDgMHID1KY71iM4AfPs/Gdexjxo2ARL6HbLyFhUNVXRb8w7rxlxlqTruxDDA==:"
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\";aud=\"prov-test-1\"",
+          "signature": "assay=:IFxcqvc1PcRd67uZmHG1tjUcnDTM2wxLYl5JIOss4lUJdbCwNailgWR3RVZkDLsPg2mlNbnH3cTWhmhEvhrwAQ==:"
         },
         "body": "{\"q\":\"a b\"}"
       },
@@ -110,8 +111,8 @@
           "host": "api.example.test",
           "x-assay-call-id": "c-1",
           "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
-          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"unknown-key\";alg=\"ed25519\";tag=\"assay-request\"",
-          "signature": "assay=:nFxnbMy7YyZhCiGlaT0wXUGXwBNgtKXtgEX3lA4ghEK2WRRM+NxjM8gRtPncRCqg73Uw1IVAepeG7Lhj3teJDw==:"
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"unknown-key\";alg=\"ed25519\";tag=\"assay-request\";aud=\"prov-test-1\"",
+          "signature": "assay=:oy8TAOsaX14k8H8Bao/Em+CUQwua+XLKrE7O5RXFKb+1by1cBefFsnvSAySvWbfu/vAutjCFu08ZJQJw7HOoBA==:"
         },
         "body": "{\"q\":\"a b\"}"
       },
@@ -130,8 +131,8 @@
               "host": "api.example.test",
               "x-assay-call-id": "c-1",
               "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
-              "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\"",
-              "signature": "assay=:CDZYt+dx4DbPldtcvKsgzOTX5bXDgMHID1KY71iM4AfPs/Gdexjxo2ARL6HbLyFhUNVXRb8w7rxlxlqTruxDDA==:"
+              "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\";aud=\"prov-test-1\"",
+              "signature": "assay=:IFxcqvc1PcRd67uZmHG1tjUcnDTM2wxLYl5JIOss4lUJdbCwNailgWR3RVZkDLsPg2mlNbnH3cTWhmhEvhrwAQ==:"
             },
             "body": "{\"q\":\"a b\"}"
           },
@@ -146,8 +147,8 @@
               "host": "api.example.test",
               "x-assay-call-id": "c-1",
               "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
-              "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\"",
-              "signature": "assay=:CDZYt+dx4DbPldtcvKsgzOTX5bXDgMHID1KY71iM4AfPs/Gdexjxo2ARL6HbLyFhUNVXRb8w7rxlxlqTruxDDA==:"
+              "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\";aud=\"prov-test-1\"",
+              "signature": "assay=:IFxcqvc1PcRd67uZmHG1tjUcnDTM2wxLYl5JIOss4lUJdbCwNailgWR3RVZkDLsPg2mlNbnH3cTWhmhEvhrwAQ==:"
             },
             "body": "{\"q\":\"a b\"}"
           },
@@ -167,8 +168,8 @@
           "host": "api.example.test",
           "x-assay-call-id": "c-1",
           "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
-          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\"",
-          "signature": "assay=:DJNmurhTZBhnMyfnHp6QbnJqkowqPZHQLRS7bS757k+r++o4sWmNtmv3Cowudci4V8TzVV09fl6MrI/b8rbIDg==:"
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\";aud=\"prov-test-1\"",
+          "signature": "assay=:RRt92ieovH+z8HW/pzMigN3gM1wlwpWEGywGh72qYavxgByT6GpTaMJ2e8QNWeq9uiLrppQv2Bycn0t0+zzqAw==:"
         },
         "body": "{\"q\":\"a b\"}"
       },
@@ -190,6 +191,78 @@
       },
       "now": 1760700010,
       "expectedReason": "MISSING"
+    },
+    {
+      "name": "wrong-provider",
+      "why": "Validly signed by Assay, but for another provider (aud \"prov-other\"); the configured provider is the one in \"provider\".",
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.test/v1/search?q=a%20b",
+        "headers": {
+          "host": "api.example.test",
+          "x-assay-call-id": "c-1",
+          "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\";aud=\"prov-other\"",
+          "signature": "assay=:kRrEjuDmuo6Ot85GCc6QxHfJ/UK8AFo7mUVdpVfZE0Tlz5cVSDnMo8FZhsALpgiQ3HsenCAs74WlhNEc02SDCg==:"
+        },
+        "body": "{\"q\":\"a b\"}"
+      },
+      "now": 1760700010,
+      "expectedReason": "WRONG_PROVIDER"
+    },
+    {
+      "name": "audience-missing",
+      "why": "Validly signed, but Signature-Input has no aud parameter (an old-format signature).",
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.test/v1/search?q=a%20b",
+        "headers": {
+          "host": "api.example.test",
+          "x-assay-call-id": "c-1",
+          "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\"",
+          "signature": "assay=:CDZYt+dx4DbPldtcvKsgzOTX5bXDgMHID1KY71iM4AfPs/Gdexjxo2ARL6HbLyFhUNVXRb8w7rxlxlqTruxDDA==:"
+        },
+        "body": "{\"q\":\"a b\"}"
+      },
+      "now": 1760700010,
+      "expectedReason": "WRONG_PROVIDER"
+    },
+    {
+      "name": "audience-not-string",
+      "why": "Validly signed, but aud is the integer 1 instead of a string.",
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.test/v1/search?q=a%20b",
+        "headers": {
+          "host": "api.example.test",
+          "x-assay-call-id": "c-1",
+          "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\";aud=1",
+          "signature": "assay=:/OQkZtsnXvXdlHMwHGqLoamfqYNXFW9XATjjuEpS92QdN07LCjrcjXfn8QEy2OcYAR3TC6qo9WDTnKG+gNzUDw==:"
+        },
+        "body": "{\"q\":\"a b\"}"
+      },
+      "now": 1760700010,
+      "expectedReason": "WRONG_PROVIDER"
+    },
+    {
+      "name": "audience-changed",
+      "why": "Signed for \"prov-other\", then aud in Signature-Input was rewritten to the configured provider; the signature covers the parameters, so it does not verify.",
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.test/v1/search?q=a%20b",
+        "headers": {
+          "host": "api.example.test",
+          "x-assay-call-id": "c-1",
+          "content-digest": "sha-256=:dm7Bv3nwO4zfpapceY8ZEGZiaYiTOc8C3j72DLhHCSw=:",
+          "signature-input": "assay=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-assay-call-id\");created=1760700000;expires=1760700300;nonce=\"AQEBAQEBAQEBAQEBAQEBAQ\";keyid=\"test-2026-10\";alg=\"ed25519\";tag=\"assay-request\";aud=\"prov-test-1\"",
+          "signature": "assay=:kRrEjuDmuo6Ot85GCc6QxHfJ/UK8AFo7mUVdpVfZE0Tlz5cVSDnMo8FZhsALpgiQ3HsenCAs74WlhNEc02SDCg==:"
+        },
+        "body": "{\"q\":\"a b\"}"
+      },
+      "now": 1760700010,
+      "expectedReason": "BAD_SIGNATURE"
     }
   ]
 }

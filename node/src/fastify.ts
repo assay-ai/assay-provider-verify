@@ -10,7 +10,7 @@ interface Instance {
 }
 
 /** Fastify plugin: `app.register(assayVerifyPlugin, options)`. Applies to the whole app (not encapsulated). */
-export const assayVerifyPlugin = async (app: Instance, options: AdapterOptions = {}): Promise<void> => {
+export const assayVerifyPlugin = async (app: Instance, options: AdapterOptions): Promise<void> => {
   const verify = createVerifier(options);
   const max = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   app.addHook("preParsing", async (req, reply, payload) => {

@@ -5,6 +5,10 @@ compatibility_date = "2026-10-01"
 [vars]
 # Where valid requests are forwarded. Required. Scheme and host, optional path prefix.
 ORIGIN_URL = "https://origin.example.com"
+# Your Assay provider id, shown in the portal. Required: while it is empty the
+# Worker answers 500 and forwards nothing. Several ids may be comma-separated.
+# Requests that Assay signed for any other provider are refused (WRONG_PROVIDER).
+ASSAY_PROVIDER_ID = ""
 # Optional: use a different key set, for example testnet:
 # JWKS_URL = "https://api-dev.goassay.ai/.well-known/assay-request-keys.json"
 
