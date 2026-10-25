@@ -41,6 +41,7 @@ func (s redisReplayStore) CheckAndStore(ctx context.Context, nonce string, ttl t
 func Example_redisReplayStore() {
 	var client redisClient // your adapter, see above
 	mw, err := assayverify.Middleware(assayverify.Options{
+		Providers:   []string{"your-provider-id"}, // shown in the portal
 		ReplayStore: redisReplayStore{client: client, prefix: "assay:nonce:"},
 	})
 	if err != nil {

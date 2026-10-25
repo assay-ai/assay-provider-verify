@@ -7,6 +7,8 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -25,14 +27,24 @@ const (
 	ReasonDigestMismatch RejectReason = "DIGEST_MISMATCH"
 	ReasonUnknownKey     RejectReason = "UNKNOWN_KEY"
 	ReasonBadSignature   RejectReason = "BAD_SIGNATURE"
+	ReasonWrongProvider  RejectReason = "WRONG_PROVIDER"
 	ReasonReplayed       RejectReason = "REPLAYED"
 )
 
 // DefaultMaxBodyBytes is the default cap for bodies buffered by the middleware.
 const DefaultMaxBodyBytes = 5_242_880
 
+// ErrNoProvider is returned by New and Middleware when Options.Providers is empty.
+var ErrNoProvider = errors.New("assayverify: Options.Providers is required (your Assay provider id, shown in the portal)")
+
+var providerIDRe = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
 // Options configures a Verifier or the middleware.
 type Options struct {
+	// Providers is REQUIRED: your Assay provider id (shown in the portal), or
+	// several. Only requests signed for one of these providers (the "aud"
+	// signature parameter) are accepted; others get WRONG_PROVIDER.
+	Providers []string
 	// JWKSURL overrides the key set URL (default: per Environment).
 	JWKSURL string
 	// Environment is "production" (default) or "testnet".
@@ -55,20 +67,32 @@ type Options struct {
 
 // Verifier checks request signatures. It is safe for concurrent use.
 type Verifier struct {
-	opts   Options
-	replay ReplayStore
-	cache  *jwksCache
-	static map[string]ed25519.PublicKey
-	now    func() time.Time
-	skew   int64
+	opts      Options
+	providers map[string]struct{}
+	replay    ReplayStore
+	cache     *jwksCache
+	static    map[string]ed25519.PublicKey
+	now       func() time.Time
+	skew      int64
 }
 
 var defaultReplay = NewMemoryReplayStore(100_000)
 
 // New builds a Verifier. Without a ReplayStore it uses a process-wide in-memory
-// one; key set caches are shared per URL.
+// one; key set caches are shared per URL. It fails with ErrNoProvider when
+// Options.Providers is empty, and with an error for an invalid provider id.
 func New(opts Options) (*Verifier, error) {
-	v := &Verifier{opts: opts, replay: opts.ReplayStore, now: opts.Now, skew: 60}
+	if len(opts.Providers) == 0 {
+		return nil, ErrNoProvider
+	}
+	providers := make(map[string]struct{}, len(opts.Providers))
+	for _, p := range opts.Providers {
+		if !providerIDRe.MatchString(p) {
+			return nil, fmt.Errorf("assayverify: invalid provider id %q", p)
+		}
+		providers[p] = struct{}{}
+	}
+	v := &Verifier{opts: opts, providers: providers, replay: opts.ReplayStore, now: opts.Now, skew: 60}
 	if v.replay == nil {
 		v.replay = defaultReplay
 	}
@@ -139,11 +163,23 @@ func headerValue(h http.Header, name string) string {
 
 var expectedBase = []string{"@method", "@authority", "@path", "@query"}
 
+// Result is the outcome of Verify. Reason is empty when the request is
+// accepted; KeyID, CallID and ProviderID are set only then.
+type Result struct {
+	KeyID      string
+	CallID     string
+	ProviderID string // the matched entry of Options.Providers
+	Reason     RejectReason
+}
+
+// OK reports whether the request was accepted.
+func (r Result) OK() bool { return r.Reason == "" }
+
 // Verify checks the request's signature. body is the raw body (nil or empty
-// when there is none). On success reason is empty; err is non-nil only when the
-// replay store fails (fail closed: treat as an error, not as a rejection).
-func (v *Verifier) Verify(r *http.Request, body []byte) (keyID string, callID string, reason RejectReason, err error) {
-	reject := func(x RejectReason) (string, string, RejectReason, error) { return "", "", x, nil }
+// when there is none). err is non-nil only when the replay store fails (fail
+// closed: treat as an error, not as a rejection).
+func (v *Verifier) Verify(r *http.Request, body []byte) (Result, error) {
+	reject := func(x RejectReason) (Result, error) { return Result{Reason: x}, nil }
 
 	// 1. Headers.
 	sigInputHeader := strings.TrimSpace(headerValue(r.Header, "Signature-Input"))
@@ -292,17 +328,26 @@ func (v *Verifier) Verify(r *http.Request, body []byte) (keyID string, callID st
 		return reject(ReasonBadSignature)
 	}
 
-	// 7. Replay.
+	// 7. Audience: only after the signature holds, so unsigned probes learn nothing.
+	aud, ok := in.params["aud"]
+	if !ok || aud.kind != kindString {
+		return reject(ReasonWrongProvider)
+	}
+	if _, ok := v.providers[aud.s]; !ok {
+		return reject(ReasonWrongProvider)
+	}
+
+	// 8. Replay.
 	ttl := expires + v.skew - t
 	if ttl < 1 {
 		ttl = 1
 	}
 	fresh, err := v.replay.CheckAndStore(r.Context(), nonce, time.Duration(ttl)*time.Second)
 	if err != nil {
-		return "", "", "", err
+		return Result{}, err
 	}
 	if !fresh {
 		return reject(ReasonReplayed)
 	}
-	return kid, call, "", nil
+	return Result{KeyID: kid, CallID: call, ProviderID: aud.s}, nil
 }

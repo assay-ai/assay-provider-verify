@@ -3,6 +3,12 @@ import type { ReplayStore, VerifyOptions } from "@goassay-ai/provider-verify";
 
 export interface Env {
   ORIGIN_URL: string;
+  /**
+   * Required. Your Assay provider id (shown in the portal); several ids may be
+   * given comma-separated. Requests signed for any other provider are refused.
+   * Without it the Worker answers 500 and never calls the origin.
+   */
+  ASSAY_PROVIDER_ID?: string;
   JWKS_URL?: string;
   /** Optional shared secret sent to the origin as `x-assay-origin-secret`. */
   ORIGIN_SECRET?: string;
@@ -17,6 +23,15 @@ const JSON_HEADERS = { "content-type": "application/json" };
 
 function json(status: number, body: string): Response {
   return new Response(body, { status, headers: JSON_HEADERS });
+}
+
+function misconfigured(message: string): Response {
+  return json(500, JSON.stringify({ error: "assay_verify_misconfigured", message }));
+}
+
+/** Provider ids from ASSAY_PROVIDER_ID (comma-separated); empty when unset. */
+export function providerIds(env: Env): string[] {
+  return (env.ASSAY_PROVIDER_ID ?? "").split(",").map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
 /** Reads the body up to the cap; null when it is larger. */
@@ -82,24 +97,41 @@ const memoryStore = new MemoryReplayStore();
 type Verify = ReturnType<typeof createVerifier>;
 const verifiers = new Map<string, Verify>();
 
-function verifierFor(env: Env, extra: VerifyOptions): Verify {
+/** Options the Worker takes from its environment rather than from code. */
+export type WorkerOptions = Omit<VerifyOptions, "provider">;
+
+function verifierFor(env: Env, providers: string[], extra: WorkerOptions): Verify {
   const useDo = Boolean(env.NONCE_STORE);
-  const key = `${env.JWKS_URL ?? ""}|${useDo ? "do:" + (env.NONCE_LOCATION_HINT ?? "") : "mem"}`;
+  const key = `${providers.join(",")}|${env.JWKS_URL ?? ""}|${useDo ? "do:" + (env.NONCE_LOCATION_HINT ?? "") : "mem"}`;
   const cached = extra.replayStore || extra.jwks ? undefined : verifiers.get(key);
   if (cached) return cached;
   const v = createVerifier({
     replayStore: env.NONCE_STORE ? durableReplayStore(env.NONCE_STORE, env.NONCE_LOCATION_HINT) : memoryStore,
     ...(env.JWKS_URL ? { jwksUrl: env.JWKS_URL } : {}),
     ...extra,
+    provider: providers,
   });
   if (!extra.replayStore && !extra.jwks) verifiers.set(key, v);
   return v;
 }
 
 /** Builds the Worker. `extra` lets tests inject keys, a clock or a replay store. */
-export function createWorker(extra: VerifyOptions = {}) {
+export function createWorker(extra: WorkerOptions = {}) {
   return {
     async fetch(request: Request, env: Env, _ctx?: ExecutionContext): Promise<Response> {
+      // Fail closed before anything else: without a provider id nothing is forwarded.
+      const providers = providerIds(env);
+      if (providers.length === 0) {
+        return misconfigured("ASSAY_PROVIDER_ID is not set: set it to your Assay provider id (shown in the portal)");
+      }
+      let verify: Verify;
+      try {
+        verify = verifierFor(env, providers, extra);
+      } catch {
+        // The value is not echoed: this answer goes to whoever called the Worker.
+        return misconfigured("ASSAY_PROVIDER_ID is invalid: use your Assay provider id (shown in the portal); separate several with commas");
+      }
+
       const url = new URL(request.url);
       const bytes = await readLimited(request.clone(), MAX_BODY_BYTES);
       if (bytes === null) return json(413, '{"error":"payload_too_large"}');
@@ -114,7 +146,7 @@ export function createWorker(extra: VerifyOptions = {}) {
       authorityHeaders.set("host", url.host);
       let result: Awaited<ReturnType<Verify>>;
       try {
-        result = await verifierFor(env, extra)({
+        result = await verify({
           method: request.method,
           url: request.url,
           headers: authorityHeaders,

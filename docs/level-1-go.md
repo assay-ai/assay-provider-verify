@@ -11,6 +11,10 @@ Rejected requests get `401`, `content-type: application/json` and
 `{"error":"invalid_assay_signature","reason":"<CODE>"}`. Accepted requests reach your handler
 unchanged, with `r.Body` restored so the full body is still readable.
 
+`Options.Providers` is required: your Assay provider id, shown in the portal. Assay signs requests for
+all providers with the same keys, so the id is what makes sure a request was meant for you; without it
+`New` and `Middleware` return `ErrNoProvider`.
+
 ## Middleware
 
 ```go
@@ -24,7 +28,9 @@ import (
 )
 
 func main() {
-	verify, err := assayverify.Middleware(assayverify.Options{}) // production keys
+	verify, err := assayverify.Middleware(assayverify.Options{
+		Providers: []string{"your-provider-id"}, // shown in the portal
+	}) // production keys
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -42,6 +48,7 @@ the same bytes to your handler.
 
 | Field | Default | Meaning |
 |---|---|---|
+| `Providers` | required | Your Assay provider id(s), shown in the portal. Requests signed for any other provider get `WRONG_PROVIDER`. Empty: `ErrNoProvider`; an invalid id is an error too |
 | `Environment` | `"production"` | `"testnet"` selects the testnet key set |
 | `JWKSURL` | per environment | Override the key set URL |
 | `Authority` | `Host` header | Public host (`:port` if not the scheme default) when a proxy rewrites `Host` |
@@ -60,18 +67,18 @@ not served (fail closed).
 ## Without the middleware
 
 ```go
-v, err := assayverify.New(assayverify.Options{})
-if err != nil { /* bad Options */ }
+v, err := assayverify.New(assayverify.Options{Providers: []string{"your-provider-id"}})
+if err != nil { /* bad Options, for example no Providers */ }
 
 body, _ := io.ReadAll(r.Body) // the raw bytes; nil or empty when there is none
-keyID, callID, reason, err := v.Verify(r, body)
+res, err := v.Verify(r, body)
 switch {
 case err != nil:
 	// replay store failure: do not serve the request
-case reason != "":
-	// rejected; reason is an assayverify.RejectReason such as assayverify.ReasonBadSignature
+case !res.OK():
+	// rejected; res.Reason is an assayverify.RejectReason such as assayverify.ReasonBadSignature
 default:
-	// accepted: keyID, callID
+	// accepted: res.KeyID, res.CallID, res.ProviderID (the matched id)
 }
 ```
 
@@ -103,7 +110,7 @@ The signature covers `@authority`, the host the caller used. If a proxy rewrites
 public host explicitly:
 
 ```go
-assayverify.Middleware(assayverify.Options{Authority: "api.example.com"})
+assayverify.Middleware(assayverify.Options{Providers: []string{"your-provider-id"}, Authority: "api.example.com"})
 ```
 
 ## Testing locally with the vectors
@@ -113,6 +120,7 @@ the vector's `created` time so nothing is fetched and nothing expires:
 
 ```go
 mw, _ := assayverify.Middleware(assayverify.Options{
+	Providers: []string{audience}, // the vector's params.audience
 	JWKS:      []byte(`{"keys":[` + publicKeyJwk + `]}`),
 	Now:       func() time.Time { return time.Unix(created, 0) },
 	Authority: "api.example.test",
@@ -120,4 +128,4 @@ mw, _ := assayverify.Middleware(assayverify.Options{
 ```
 
 Changing one byte of the body returns `DIGEST_MISMATCH`. Replaying the same request returns
-`REPLAYED`. See `go/verify_test.go` and `go/middleware_test.go` for working tests.
+`REPLAYED`. Configuring another provider id returns `WRONG_PROVIDER`. See `go/verify_test.go` and `go/middleware_test.go` for working tests.

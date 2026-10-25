@@ -73,6 +73,16 @@ Likely causes and fixes:
 - **Your server cannot reach the key URL.** Check outbound HTTPS from your server, DNS and firewall rules. The verifier waits up to 5 seconds for the file. After a failed fetch it waits 5 seconds before it tries again, and during that time it answers `UNKNOWN_KEY` if it has no cached keys. After the pause it retries on its own and recovers once the network is back. You do not need to restart.
 - **A key was rotated.** The verifier fetches the file again when it sees an unknown `keyid`, at most once per minute. Wait a minute and retry.
 
+## WRONG_PROVIDER
+
+The signature is valid, but Assay signed the request for a different provider than the one(s) your verifier is configured with (the `aud` parameter), or the request has no `aud` at all.
+
+Likely causes and fixes:
+
+- **Wrong provider id configured.** Set `provider` (Node, Python), `Providers` (Go) or `ASSAY_PROVIDER_ID` (Worker) to your Assay provider id exactly as shown in the portal. Several ids are allowed when one endpoint serves more than one of your providers.
+- **Another provider pointed a binding at your API.** This is the case the check exists for. The request came from Assay, but on behalf of someone else, so refusing it is correct. See [overview.md](overview.md#why-the-audience-check-exists).
+- **A signature without `aud`.** Assay adds `aud` to every request. A request without it is old or not from Assay's current signer, and is refused.
+
 ## Other reasons
 
 | Reason | Meaning | Fix |

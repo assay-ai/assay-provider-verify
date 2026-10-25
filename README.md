@@ -20,7 +20,15 @@ Keys are fetched automatically from:
 - production: `https://api.goassay.ai/.well-known/assay-request-keys.json` (default)
 - testnet: `https://api-dev.goassay.ai/.well-known/assay-request-keys.json` (set `environment: "testnet"`)
 
+Every verifier needs your Assay provider id, shown in the portal: `provider` in Node and Python, `Providers` in Go, `ASSAY_PROVIDER_ID` in the Worker. It is required and cannot be turned off.
+
 A rejected request gets `401` with body `{"error":"invalid_assay_signature","reason":"<CODE>"}`.
+
+## Why the provider id is required
+
+Assay signs requests for every provider with the same keys, so a valid signature only proves that Assay sent the request. Since 0.2.0 Assay also signs the id of the provider the request is for (the `aud` parameter), and every verifier here accepts only the id(s) you configure; anything else is rejected with `WRONG_PROVIDER`. Without this, another provider could point one of its bindings at your API and have Assay send you requests your verifier would accept. Details: [docs/overview.md](docs/overview.md#why-the-audience-check-exists).
+
+**Upgrading from 0.1:** set provider to your Assay provider id (shown in the portal). See [CHANGELOG.md](CHANGELOG.md).
 
 ## Deploy without code
 

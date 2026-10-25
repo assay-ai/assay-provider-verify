@@ -1,6 +1,6 @@
 {
   "name": "assay-provider-verify-worker",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Zero-code Cloudflare Worker that verifies Assay request signatures and forwards valid requests to your origin.",
   "license": "MIT",
@@ -21,6 +21,6 @@
     "wrangler": "4.147.0"
   },
   "dependencies": {
-    "@goassay-ai/provider-verify": "0.1.0"
+    "@goassay-ai/provider-verify": "0.2.0"
   }
 }

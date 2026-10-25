@@ -18,9 +18,11 @@ with the full body still readable.
 ```python
 from goassay_provider_verify import AssayVerifyMiddleware, AssayVerifyWSGI
 
-app.add_middleware(AssayVerifyMiddleware)                # FastAPI / Starlette (ASGI)
-app.wsgi_app = AssayVerifyWSGI(app.wsgi_app)             # Flask (WSGI)
-application = AssayVerifyWSGI(get_wsgi_application())    # Django, in wsgi.py
+PROVIDER = "your-provider-id"  # your Assay provider id, shown in the portal (required)
+
+app.add_middleware(AssayVerifyMiddleware, provider=PROVIDER)                # FastAPI / Starlette (ASGI)
+app.wsgi_app = AssayVerifyWSGI(app.wsgi_app, provider=PROVIDER)             # Flask (WSGI)
+application = AssayVerifyWSGI(get_wsgi_application(), provider=PROVIDER)    # Django, in wsgi.py
 ```
 
 Without a framework, call the verifier yourself:
@@ -28,14 +30,22 @@ Without a framework, call the verifier yourself:
 ```python
 from goassay_provider_verify import Verifier
 
-result = Verifier().verify(method, url, headers, body)  # url = path + query; body = raw bytes or None
+result = Verifier(provider=PROVIDER).verify(method, url, headers, body)  # url = path + query; body = raw bytes or None
 if not result.ok:
     print(result.reason)
 ```
 
+`provider` is required (a list of ids is allowed). Assay signs requests for every provider with the
+same keys, so a request it signed for another provider is rejected with `WRONG_PROVIDER`.
 Testnet keys: pass `environment="testnet"`. Behind a proxy that rewrites `Host`, pass
 `authority="api.example.com"`. With more than one instance, use `redis_replay_store`
 (`pip install "goassay-provider-verify[redis]"`).
+
+## Upgrading from 0.1
+
+0.2.0 makes `provider` required and adds the reject reason `WRONG_PROVIDER`. Set provider to your
+Assay provider id (shown in the portal). See the
+[changelog](https://github.com/assay-ai/assay-provider-verify/blob/main/CHANGELOG.md).
 
 ## Documentation
 

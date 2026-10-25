@@ -6,7 +6,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple, Union
 from urllib.parse import urlsplit
 
 from cryptography.exceptions import InvalidSignature
@@ -26,6 +26,7 @@ class RejectReason(str, Enum):
     DIGEST_MISMATCH = "DIGEST_MISMATCH"
     UNKNOWN_KEY = "UNKNOWN_KEY"
     BAD_SIGNATURE = "BAD_SIGNATURE"
+    WRONG_PROVIDER = "WRONG_PROVIDER"
     REPLAYED = "REPLAYED"
 
 
@@ -35,6 +36,7 @@ class VerifyResult:
     reason: Optional[RejectReason] = None
     key_id: Optional[str] = None
     call_id: Optional[str] = None
+    provider_id: Optional[str] = None
 
 
 def rejection_body(reason: RejectReason) -> str:
@@ -44,6 +46,7 @@ def rejection_body(reason: RejectReason) -> str:
 
 _BASE_COMPONENTS = ["@method", "@authority", "@path", "@query"]
 _MAX_VALIDITY_SECONDS = 300
+_PROVIDER_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}\Z")
 _ABSOLUTE = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
 _DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443}
 
@@ -108,6 +111,20 @@ def _str_param(m: Member, name: str) -> Optional[str]:
     return v if isinstance(v, str) and v else None
 
 
+def _provider_set(provider: object) -> FrozenSet[str]:
+    """Validates the required ``provider`` option; there is no way to opt out."""
+    if provider is None:
+        raise TypeError("goassay_provider_verify: the 'provider' option is required "
+                        "(your Assay provider id, shown in the portal)")
+    ids = [provider] if isinstance(provider, str) else list(provider)  # type: ignore[call-overload]
+    if not ids:
+        raise ValueError("goassay_provider_verify: 'provider' must name at least one provider id")
+    for i in ids:
+        if not isinstance(i, str) or not _PROVIDER_ID.match(i):
+            raise ValueError("goassay_provider_verify: invalid provider id %r" % (i,))
+    return frozenset(ids)
+
+
 def _decode_b64(b64: str) -> bytes:
     b64 += "=" * (-len(b64) % 4)
     return base64.b64decode(b64, validate=True)
@@ -123,7 +140,14 @@ class Verifier:
         clock_skew: int = 60,
         now: Optional[Callable[[], float]] = None,
         jwks: Optional[dict] = None,
+        *,
+        provider: Union[str, Iterable[str], None] = None,
     ) -> None:
+        """``provider`` is REQUIRED: your Assay provider id (shown in the portal), or a
+        list of them. Only requests signed for one of these providers (the ``aud``
+        signature parameter) are accepted; others get WRONG_PROVIDER. Raises
+        TypeError when it is missing and ValueError when it is empty or invalid."""
+        self._providers = _provider_set(provider)
         self._authority = authority
         self._skew = clock_skew
         self._now = now or _system_now
@@ -227,12 +251,17 @@ class Verifier:
         except (InvalidSignature, ValueError):
             return _reject(RejectReason.BAD_SIGNATURE)
 
-        # 7. Replay.
+        # 7. Audience: only after the signature holds, so unsigned probes learn nothing.
+        aud = input_member.params.get("aud")
+        if not isinstance(aud, str) or aud not in self._providers:
+            return _reject(RejectReason.WRONG_PROVIDER)
+
+        # 8. Replay.
         ttl = max(1, expires + skew - t)
         if not self._replay.check_and_store(nonce, ttl):
             return _reject(RejectReason.REPLAYED)
 
-        return VerifyResult(ok=True, key_id=keyid, call_id=call_id)
+        return VerifyResult(ok=True, key_id=keyid, call_id=call_id, provider_id=aud)
 
     def _resolve_authority(self, headers: Mapping[str, str], url_host: Optional[str]) -> Optional[str]:
         if self._authority:

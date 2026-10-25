@@ -9,7 +9,7 @@ interface Ctx {
 export type AssayHonoMiddleware = (c: Ctx, next: () => Promise<void>) => Promise<unknown>;
 
 /** Hono middleware: `app.use("*", assayVerify())`. Hono caches the body, so handlers can still read it. */
-export function assayVerify(options: AdapterOptions = {}): AssayHonoMiddleware {
+export function assayVerify(options: AdapterOptions): AssayHonoMiddleware {
   const verify = createVerifier(options);
   const max = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   return async (c, next) => {

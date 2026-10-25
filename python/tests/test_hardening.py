@@ -16,7 +16,7 @@ JWK = V1["publicKeyJwk"]
 
 
 def sign(method="GET", target="/p?x=1", host="api.example.test", created=1000, expires=None, call_id="c1",
-         body=None, nonce="n1", kid="test-2026-10"):
+         body=None, nonce="n1", kid="test-2026-10", aud="prov-test-1"):
     import hashlib
     expires = created + 300 if expires is None else expires
     comps = ['"@method"', '"@authority"', '"@path"', '"@query"']
@@ -31,6 +31,8 @@ def sign(method="GET", target="/p?x=1", host="api.example.test", created=1000, e
     comps.append('"x-assay-call-id"')
     lines.append(f'"x-assay-call-id": {call_id}')
     params = f'({" ".join(comps)});created={created};expires={expires};nonce="{nonce}";keyid="{kid}";alg="ed25519";tag="assay-request"'
+    if aud is not None:
+        params += f';aud="{aud}"'
     lines.append(f'"@signature-params": {params}')
     sig = KEY.sign("\n".join(lines).encode())
     headers["signature-input"] = "assay=" + params
@@ -38,7 +40,11 @@ def sign(method="GET", target="/p?x=1", host="api.example.test", created=1000, e
     return method, target, headers, body
 
 
+PROVIDER = "prov-test-1"
+
+
 def make(**kw):
+    kw.setdefault("provider", PROVIDER)
     kw.setdefault("jwks", {"keys": [JWK]})
     kw.setdefault("now", lambda: 1000)
     kw.setdefault("replay_store", MemoryReplayStore())
@@ -95,8 +101,8 @@ def test_replay_shared_default_store(monkeypatch):
     from goassay_provider_verify import core
     monkeypatch.setattr(core, "_DEFAULT_REPLAY", MemoryReplayStore())
     req = sign(nonce="shared")
-    a = Verifier(jwks={"keys": [JWK]}, now=lambda: 1000)
-    b = Verifier(jwks={"keys": [JWK]}, now=lambda: 1000)
+    a = Verifier(provider=PROVIDER, jwks={"keys": [JWK]}, now=lambda: 1000)
+    b = Verifier(provider=PROVIDER, jwks={"keys": [JWK]}, now=lambda: 1000)
     assert a.verify(*req).ok
     assert b.verify(*req).reason == RejectReason.REPLAYED
 
@@ -151,7 +157,7 @@ def test_jwks_fetch_timeout_backoff_and_recovery(monkeypatch):
 
     monkeypatch.setattr(jwks_mod, "urlopen", fake_open)
     clock = {"t": 1000}
-    v = Verifier(jwks_url="https://x.test/k.json", now=lambda: clock["t"], replay_store=MemoryReplayStore())
+    v = Verifier(provider=PROVIDER, jwks_url="https://x.test/k.json", now=lambda: clock["t"], replay_store=MemoryReplayStore())
     assert v.verify(*sign(nonce="a")).reason == RejectReason.UNKNOWN_KEY
     assert calls == [5]
     clock["t"] = 1003  # inside the 5 s backoff
@@ -172,7 +178,7 @@ def test_jwks_unknown_kid_refetch_at_most_once_per_60s(monkeypatch):
 
     monkeypatch.setattr(jwks_mod, "urlopen", fake_open)
     clock = {"t": 1000}
-    v = Verifier(jwks_url="https://y.test/k.json", now=lambda: clock["t"], replay_store=MemoryReplayStore())
+    v = Verifier(provider=PROVIDER, jwks_url="https://y.test/k.json", now=lambda: clock["t"], replay_store=MemoryReplayStore())
     assert v.verify(*sign(nonce="a")).ok
     for i, t in enumerate((1001, 1030)):
         clock["t"] = t
@@ -192,8 +198,8 @@ def test_jwks_cache_shared_per_url(monkeypatch):
 
     monkeypatch.setattr(jwks_mod, "urlopen", fake_open)
     r = MemoryReplayStore()
-    a = Verifier(jwks_url="https://z.test/k.json", now=lambda: 1000, replay_store=r)
-    b = Verifier(jwks_url="https://z.test/k.json", now=lambda: 1000, replay_store=r)
+    a = Verifier(provider=PROVIDER, jwks_url="https://z.test/k.json", now=lambda: 1000, replay_store=r)
+    b = Verifier(provider=PROVIDER, jwks_url="https://z.test/k.json", now=lambda: 1000, replay_store=r)
     assert a.verify(*sign(nonce="a")).ok
     assert b.verify(*sign(nonce="b")).ok
     assert len(calls) == 1
@@ -253,7 +259,7 @@ def test_asgi_slow_jwks_fetch_does_not_block_event_loop(monkeypatch):
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b"ok"})
 
-    mw = AssayVerifyMiddleware(app, jwks_url="https://slow.test/k.json", now=lambda: 1000,
+    mw = AssayVerifyMiddleware(app, provider=PROVIDER, jwks_url="https://slow.test/k.json", now=lambda: 1000,
                                replay_store=MemoryReplayStore())
     method, target, headers, _ = sign(nonce="slow")
     path, _, qs = target.partition("?")

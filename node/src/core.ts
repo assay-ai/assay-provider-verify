@@ -4,7 +4,7 @@ import { parseDictionary, ParseError, type Member } from "./structured.js";
 
 export type RejectReason =
   | "MISSING" | "MALFORMED" | "WRONG_TAG" | "EXPIRED"
-  | "DIGEST_MISMATCH" | "UNKNOWN_KEY" | "BAD_SIGNATURE" | "REPLAYED";
+  | "DIGEST_MISMATCH" | "UNKNOWN_KEY" | "BAD_SIGNATURE" | "WRONG_PROVIDER" | "REPLAYED";
 
 export interface VerifyInput {
   method: string;
@@ -16,6 +16,12 @@ export interface VerifyInput {
 export type { ReplayStore };
 
 export interface VerifyOptions {
+  /**
+   * REQUIRED. Your Assay provider id (shown in the portal), or a list of them.
+   * Only requests signed for one of these providers (the `aud` signature
+   * parameter) are accepted; anything else is rejected with WRONG_PROVIDER.
+   */
+  provider: string | readonly string[];
   jwksUrl?: string;
   environment?: "production" | "testnet";
   /** Overrides the @authority taken from the Host header. */
@@ -30,11 +36,12 @@ export interface VerifyOptions {
 }
 
 export type VerifyResult =
-  | { ok: true; keyId: string; callId: string }
+  | { ok: true; keyId: string; callId: string; providerId: string }
   | { ok: false; reason: RejectReason };
 
 const BASE_COMPONENTS = ["@method", "@authority", "@path", "@query"];
 const MAX_VALIDITY_SECONDS = 300;
+const PROVIDER_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const enc = new TextEncoder();
 
 function reject(reason: RejectReason): VerifyResult {
@@ -115,6 +122,7 @@ function resolveAuthority(input: VerifyInput, override: string | undefined, urlH
 async function verifyOnce(
   input: VerifyInput,
   options: VerifyOptions,
+  providers: ReadonlySet<string>,
   jwks: JwksCache,
   replay: ReplayStore,
   now: () => number,
@@ -216,18 +224,41 @@ async function verifyOnce(
   }
   if (!valid) return reject("BAD_SIGNATURE");
 
-  // 7. Replay.
+  // 7. Audience: only after the signature holds, so unsigned probes learn nothing.
+  const aud = inputMember.params.get("aud");
+  if (typeof aud !== "string" || !providers.has(aud)) return reject("WRONG_PROVIDER");
+
+  // 8. Replay.
   const ttl = Math.max(1, expires + skew - t);
   if (!(await replay.checkAndStore(nonce, ttl))) return reject("REPLAYED");
 
-  return { ok: true, keyId: keyid, callId };
+  return { ok: true, keyId: keyid, callId, providerId: aud };
 }
 
 type Verifier = (input: VerifyInput) => Promise<VerifyResult>;
 
-function build(options: VerifyOptions, jwks: JwksCache, replay: ReplayStore): Verifier {
+/**
+ * Validates the required `provider` option. Throws a TypeError when it is
+ * missing, empty or not a valid provider id: there is no way to opt out.
+ */
+function providerSet(provider: unknown): ReadonlySet<string> {
+  const list = typeof provider === "string" ? [provider] : Array.isArray(provider) ? provider : undefined;
+  if (!list || list.length === 0) {
+    throw new TypeError("assay-provider-verify: the `provider` option is required (your Assay provider id, shown in the portal)");
+  }
+  for (const id of list) {
+    if (typeof id !== "string" || !PROVIDER_ID.test(id)) {
+      throw new TypeError(`assay-provider-verify: invalid provider id ${JSON.stringify(id)}`);
+    }
+  }
+  return new Set(list as string[]);
+}
+
+function build(options: VerifyOptions, cache: () => JwksCache, replay: ReplayStore): Verifier {
+  const providers = providerSet((options as Partial<VerifyOptions> | undefined)?.provider);
+  const jwks = cache();
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
-  return (input) => verifyOnce(input, options, jwks, replay, now);
+  return (input) => verifyOnce(input, options, providers, jwks, replay, now);
 }
 
 function newCache(options: VerifyOptions): JwksCache {
@@ -235,12 +266,13 @@ function newCache(options: VerifyOptions): JwksCache {
 }
 
 /**
- * Builds a reusable verifier. The JWKS cache is shared process-wide per resolved
+ * Builds a reusable verifier. Throws when `provider` is missing or invalid.
+ * The JWKS cache is shared process-wide per resolved
  * URL (like `verifyAssayRequest`). The replay store is the one given, otherwise a
  * new in-memory store owned by this verifier.
  */
-export function createVerifier(options: VerifyOptions = {}): Verifier {
-  return build(options, sharedCache(options), options.replayStore ?? new MemoryReplayStore());
+export function createVerifier(options: VerifyOptions): Verifier {
+  return build(options, () => sharedCache(options), options?.replayStore ?? new MemoryReplayStore());
 }
 
 // One-shot helper state: a process-wide default replay store, and JWKS caches
@@ -270,11 +302,12 @@ function sharedCache(options: VerifyOptions): JwksCache {
 }
 
 /**
- * One-shot helper. Replay protection (unless a replayStore is passed) and JWKS
+ * One-shot helper. Throws (synchronously) when `provider` is missing or
+ * invalid. Replay protection (unless a replayStore is passed) and JWKS
  * caches are shared process-wide, so fresh options objects per call are fine.
  */
-export function verifyAssayRequest(input: VerifyInput, options: VerifyOptions = {}): Promise<VerifyResult> {
-  return build(options, sharedCache(options), options.replayStore ?? sharedReplay)(input);
+export function verifyAssayRequest(input: VerifyInput, options: VerifyOptions): Promise<VerifyResult> {
+  return build(options, () => sharedCache(options), options?.replayStore ?? sharedReplay)(input);
 }
 
 export { MemoryReplayStore };

@@ -7,21 +7,22 @@ const v1 = JSON.parse(readFileSync(new URL("../../test-vectors/v1.json", import.
 const te = new TextEncoder();
 const b64u = (b: Uint8Array) => Buffer.from(b).toString("base64url");
 const c1 = v1.cases[0];
+const provider = [...new Set<string>(v1.cases.map((c: any) => c.params.audience))];
 const inputOf = (c: any): VerifyInput => ({ method: c.request.method, url: c.request.url, headers: { ...c.request.headers, ...c.expected.headers }, body: c.request.body === undefined ? null : te.encode(c.request.body) });
 
 afterEach(() => vi.useRealTimers());
 
 describe("I1 one-shot helper shares state", () => {
   it("second call with fresh options objects is REPLAYED", async () => {
-    const mk = () => ({ jwks: { keys: [v1.publicKeyJwk] }, now: () => c1.params.created });
+    const mk = () => ({ provider, jwks: { keys: [v1.publicKeyJwk] }, now: () => c1.params.created });
     expect((await verifyAssayRequest(inputOf(c1), mk())).ok).toBe(true);
     expect(await verifyAssayRequest(inputOf(c1), mk())).toEqual({ ok: false, reason: "REPLAYED" });
   });
   it("fetches JWKS once across fresh options objects", async () => {
     const f = vi.fn(async () => new Response(JSON.stringify({ keys: [v1.publicKeyJwk] })));
     const c2 = v1.cases[1];
-    await verifyAssayRequest(inputOf(c2), { fetch: f as any, now: () => c2.params.created });
-    await verifyAssayRequest(inputOf(c2), { fetch: f as any, now: () => c2.params.created });
+    await verifyAssayRequest(inputOf(c2), { provider, fetch: f as any, now: () => c2.params.created });
+    await verifyAssayRequest(inputOf(c2), { provider, fetch: f as any, now: () => c2.params.created });
     expect(f).toHaveBeenCalledTimes(1);
   });
 });
@@ -42,7 +43,7 @@ describe("I2 concurrent getKey", () => {
 });
 
 describe("H1 request target", () => {
-  const verify = () => createVerifier({ jwks: { keys: [v1.publicKeyJwk] }, now: () => c1.params.created });
+  const verify = () => createVerifier({ provider, jwks: { keys: [v1.publicKeyJwk] }, now: () => c1.params.created });
   it("rejects // targets", async () => {
     const i = { ...inputOf(c1), url: "//evil.test/v1/search?q=a%20b" };
     expect(await verify()(i)).toEqual({ ok: false, reason: "MALFORMED" });
@@ -58,7 +59,7 @@ describe("H2 fetch timeout", () => {
     vi.useFakeTimers();
     try {
       const f = vi.fn(() => new Promise<Response>(() => {}));
-      const verify = createVerifier({ fetch: f as any, now: () => c1.params.created });
+      const verify = createVerifier({ provider, fetch: f as any, now: () => c1.params.created });
       const p = verify(inputOf(c1));
       // The timeout is armed only once the request reaches the fetch, after
       // real (unfaked) crypto work: advancing before that would skip it.
@@ -82,7 +83,7 @@ describe("H3 expires < created", () => {
     const sig = Buffer.from(await crypto.subtle.sign("Ed25519", key, te.encode(base))).toString("base64");
     const i = inputOf(c1);
     i.headers = { ...(i.headers as object), "Signature-Input": `assay=${list};${params}`, Signature: `assay=:${sig}:` };
-    const res = await createVerifier({ jwks: { keys: [v1.publicKeyJwk] }, now: () => created })(i);
+    const res = await createVerifier({ provider, jwks: { keys: [v1.publicKeyJwk] }, now: () => created })(i);
     expect(res).toEqual({ ok: false, reason: "EXPIRED" });
   });
 });

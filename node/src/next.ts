@@ -7,7 +7,7 @@ import { DEFAULT_MAX_BODY_BYTES, PAYLOAD_TOO_LARGE, headersSayBody, readLimited,
  */
 export function withAssayVerify<A extends unknown[] = []>(
   handler: (req: Request, ...rest: A) => Promise<Response>,
-  options: AdapterOptions = {},
+  options: AdapterOptions,
 ): (req: Request, ...rest: A) => Promise<Response> {
   const verify = createVerifier(options);
   const max = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
