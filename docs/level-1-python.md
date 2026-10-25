@@ -11,12 +11,16 @@ Python 3.9 or newer. Rejected requests get `401`, `content-type: application/jso
 `{"error":"invalid_assay_signature","reason":"<CODE>"}`. Accepted requests reach your handler
 unchanged, with the full body still readable.
 
+Every middleware and `Verifier` needs your Assay provider id, shown in the portal (`provider=`). Assay
+signs requests for all providers with the same keys, so the id is what makes sure a request was meant
+for you; without it the constructor raises `TypeError`.
+
 ## FastAPI / Starlette (ASGI)
 
 ```python
 from goassay_provider_verify import AssayVerifyMiddleware
 
-app.add_middleware(AssayVerifyMiddleware)
+app.add_middleware(AssayVerifyMiddleware, provider="your-provider-id")
 ```
 
 The middleware buffers the body, verifies, then replays the same bytes to your app, so
@@ -27,8 +31,8 @@ The middleware buffers the body, verifies, then replays the same bytes to your a
 ```python
 from goassay_provider_verify import AssayVerifyWSGI
 
-app.wsgi_app = AssayVerifyWSGI(app.wsgi_app)          # Flask
-# Django: in wsgi.py -> application = AssayVerifyWSGI(get_wsgi_application())
+app.wsgi_app = AssayVerifyWSGI(app.wsgi_app, provider="your-provider-id")   # Flask
+# Django: in wsgi.py -> application = AssayVerifyWSGI(get_wsgi_application(), provider="your-provider-id")
 ```
 
 The middleware reads the body, verifies, then replaces `wsgi.input` with the buffered bytes and sets
@@ -40,6 +44,7 @@ Pass options as keyword arguments to either middleware, or to `Verifier` directl
 
 | Option | Default | Meaning |
 |---|---|---|
+| `provider` | required | Your Assay provider id (shown in the portal), or a list of ids. Requests signed for any other provider get `WRONG_PROVIDER`. Missing: `TypeError`; empty or invalid: `ValueError` |
 | `environment` | `"production"` | `"testnet"` selects the testnet key set |
 | `jwks_url` | per environment | Override the key set URL |
 | `authority` | `Host` header | Public host (`:port` if not the scheme default) when a proxy rewrites `Host` |
@@ -58,12 +63,12 @@ attempt waits 5 s.
 ```python
 from goassay_provider_verify import Verifier
 
-verifier = Verifier()
+verifier = Verifier(provider="your-provider-id")
 result = verifier.verify(method, url, headers, body)   # body: bytes, or None when the request has none
 if not result.ok:
     ...  # result.reason is a RejectReason, for example RejectReason.BAD_SIGNATURE
 else:
-    ...  # result.key_id, result.call_id
+    ...  # result.key_id, result.call_id, result.provider_id (the matched id)
 ```
 
 `url` is the request target as sent (`/path?q=1`) or an absolute URL. Targets starting with `//` or
@@ -80,7 +85,7 @@ import redis
 from goassay_provider_verify import AssayVerifyMiddleware, redis_replay_store
 
 r = redis.Redis.from_url(os.environ["REDIS_URL"])
-app.add_middleware(AssayVerifyMiddleware, replay_store=redis_replay_store(r))  # key prefix "assay:nonce:"
+app.add_middleware(AssayVerifyMiddleware, provider="your-provider-id", replay_store=redis_replay_store(r))  # key prefix "assay:nonce:"
 ```
 
 `redis_replay_store(client, prefix="assay:nonce:")` uses `SET key 1 NX EX <ttl>` and works with any
@@ -97,7 +102,7 @@ The signature covers `@authority`, the host the caller used. If a proxy rewrites
 public host explicitly:
 
 ```python
-app.add_middleware(AssayVerifyMiddleware, authority="api.example.com")
+app.add_middleware(AssayVerifyMiddleware, provider="your-provider-id", authority="api.example.com")
 ```
 
 ## Testing locally with the vectors
@@ -110,6 +115,7 @@ v1 = json.load(open("test-vectors/v1.json"))
 c = v1["cases"][0]
 app.add_middleware(
     AssayVerifyMiddleware,
+    provider=c["params"]["audience"],
     jwks={"keys": [v1["publicKeyJwk"]]},
     now=lambda: c["params"]["created"],
     authority="api.example.test",
@@ -118,4 +124,5 @@ app.add_middleware(
 ```
 
 Changing one byte of the body returns `DIGEST_MISMATCH`. Replaying the same request returns `REPLAYED`.
+Configuring another provider id returns `WRONG_PROVIDER`.
 See `python/tests/test_middleware.py` for working FastAPI and Flask examples.

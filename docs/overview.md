@@ -38,7 +38,7 @@ The rest of this page is the full contract. You only need it for level 2 or if y
 
 ## How a signed request looks
 
-Every request Assay sends to your API carries two headers, `Signature-Input` and `Signature` (label `assay`), and a `Content-Digest` header when the request has a body. Verifying them proves the request came from Assay and was not altered. This page is the full contract, so you can also write your own verifier.
+Every request Assay sends to your API carries two headers, `Signature-Input` and `Signature` (label `assay`), and a `Content-Digest` header when the request has a body. Verifying them proves the request came from Assay and was not altered. The `aud` parameter then tells you which provider Assay signed it for: accept only your own provider id. This page is the full contract, so you can also write your own verifier.
 
 ## Where to get the public keys
 
@@ -52,7 +52,7 @@ The file is a JWKS with Ed25519 keys (`kty: "OKP"`, `crv: "Ed25519"`). Match the
 - Components, in this order: `"@method" "@authority" "@path" "@query"`, then `"content-digest"` only when the request has a body, then `"x-assay-call-id"`.
 - `@method` is uppercase. `@authority` is the lowercase host, with `:port` only when the port is not the scheme default. `@path` is the path as sent (`/` if empty). `@query` is `?` plus the query, or `?` alone when there is none.
 - `Content-Digest: sha-256=:<base64 of SHA-256 over the raw body bytes>:`
-- Parameters, in this order: `created`, `expires` (created + 300), `nonce`, `keyid`, `alg="ed25519"`, `tag="assay-request"`.
+- Parameters, in this order: `created`, `expires` (created + 300), `nonce`, `keyid`, `alg="ed25519"`, `tag="assay-request"`, `aud="<provider id>"`. `aud` is the id of the provider that owns the binding Assay is calling (it matches `^[A-Za-z0-9._:-]{1,128}$`).
 - Signature base: one line per component, `"<name>": <value>`, then the last line `"@signature-params": <inner list><params>`. Lines are joined with `\n`, no trailing newline.
 - Headers: `Signature-Input: assay=<inner list><params>` and `Signature: assay=:<base64 signature>:`.
 
@@ -64,22 +64,27 @@ The file is a JWKS with Ed25519 keys (`kty: "OKP"`, `crv: "Ed25519"`). Match the
 4. Time: `created - 60 <= now <= expires + 60` and `expires - created <= 300`, else `EXPIRED`.
 5. Rebuild the signature base from the received request. `@authority` is the `Host` header as received (lowercased; the SDKs never add or strip a port), unless you configure an override (for example behind a proxy that rewrites Host or the port).
 6. Find `keyid` in the JWKS (else `UNKNOWN_KEY`) and verify the Ed25519 signature (else `BAD_SIGNATURE`).
-7. Nonce: if already seen, `REPLAYED`; otherwise remember it until `expires + 60`.
+7. Audience: `aud` must be a string equal to one of your configured provider ids. Missing, not a string, or another id: `WRONG_PROVIDER`. Check it only after the signature holds.
+8. Nonce: if already seen, `REPLAYED`; otherwise remember it until `expires + 60`.
 
 Reject with `401`, `content-type: application/json`, body `{"error":"invalid_assay_signature","reason":"<CODE>"}`.
 
 ## Reason codes
 
-`MISSING`, `MALFORMED`, `WRONG_TAG`, `DIGEST_MISMATCH`, `EXPIRED`, `UNKNOWN_KEY`, `BAD_SIGNATURE`, `REPLAYED`.
+`MISSING`, `MALFORMED`, `WRONG_TAG`, `DIGEST_MISMATCH`, `EXPIRED`, `UNKNOWN_KEY`, `BAD_SIGNATURE`, `WRONG_PROVIDER`, `REPLAYED`.
+
+## Why the audience check exists
+
+Assay signs every outbound request with the same keys. A signature alone therefore proves only "Assay sent this", not "Assay sent this to me". Without the `aud` check, another provider could point one of its own bindings at your origin, and Assay would send your API requests that your verifier accepts (a confused deputy). Assay sets `aud` to the provider that owns the calling binding, and the signature covers it, so it cannot be changed in transit. That is why every verifier in this repository requires your provider id (the `provider` option, `Providers` in Go, `ASSAY_PROVIDER_ID` in the Worker) and has no way to turn the check off.
 
 ## Test vectors
 
 Both files hold a public test key (`publicKeyJwk`, `keyId`). The seed in `v1.json` is public and for tests only, never use it elsewhere.
 
-- `test-vectors/v1.json`: valid requests with the expected signature base and headers. Rebuilding the base from `request` and `params` must give `expected.signatureBase`; the headers must verify.
+- `test-vectors/v1.json`: valid requests with the expected signature base and headers. Rebuilding the base from `request` and `params` must give `expected.signatureBase`; the headers must verify with `params.audience` configured as the provider id, and must give `WRONG_PROVIDER` with any other id.
 - `test-vectors/negative.json`: requests that must be rejected. Its `format` field repeats the rules below.
 
-Negative file shape: each case runs against a fresh verifier (empty nonce store) configured with `publicKeyJwk`. A case with `request` is verified once at unix time `now` and must give `expectedReason` (`"OK"` means accepted). A case with `sequence` is a list of steps `{request, now, expectedReason}` verified in order against the same verifier; this is how replay is expressed. Header names are lowercase, `host` is the Host header, `body` is a UTF-8 string and absent when there is no body. Regenerate with `node scripts/make-negative-vectors.mjs` (deterministic, `node:crypto` only).
+Negative file shape: each case runs against a fresh verifier (empty nonce store) configured with `publicKeyJwk` and with exactly one provider id, `provider`. A case with `request` is verified once at unix time `now` and must give `expectedReason` (`"OK"` means accepted). A case with `sequence` is a list of steps `{request, now, expectedReason}` verified in order against the same verifier; this is how replay is expressed. Header names are lowercase, `host` is the Host header, `body` is a UTF-8 string and absent when there is no body. Regenerate with `node scripts/make-negative-vectors.mjs` (deterministic, `node:crypto` only).
 
 | Case | Expected | Why |
 |---|---|---|
@@ -92,3 +97,7 @@ Negative file shape: each case runs against a fresh verifier (empty nonce store)
 | replay | OK then REPLAYED | Same request twice; the second reuses the nonce. |
 | body-without-content-digest | MALFORMED | Correctly signed POST with a body, `content-digest` not covered. |
 | signature-headers-missing | MISSING | No `Signature` or `Signature-Input`. |
+| wrong-provider | WRONG_PROVIDER | Correctly signed, but for another provider (`aud="prov-other"`). |
+| audience-missing | WRONG_PROVIDER | Correctly signed, but without an `aud` parameter. |
+| audience-not-string | WRONG_PROVIDER | Correctly signed, but `aud=1` (an integer). |
+| audience-changed | BAD_SIGNATURE | Signed for another provider, then `aud` rewritten to yours; the signature covers it. |

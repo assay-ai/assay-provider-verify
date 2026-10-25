@@ -8,17 +8,20 @@ Assay -> Worker (checks signature) -> your origin
 
 ## Steps
 
-1. **Deploy.** Press the "Deploy to Cloudflare" button in the [README](../README.md). Cloudflare copies the `worker/` folder into your account.
+1. **Deploy.** Press the "Deploy to Cloudflare" button in the [README](../README.md). Cloudflare copies the `worker/` folder into your account. The deploy screen lists the variables from `wrangler.toml`; fill in `ORIGIN_URL` and `ASSAY_PROVIDER_ID` there, or set them afterwards in the Worker settings.
 2. **Set `ORIGIN_URL`.** In the Worker settings, set the variable `ORIGIN_URL` to your real API, for example `https://origin.example.com`. A path prefix is allowed. The Worker forwards the original path and query after it.
-3. **Add a route or custom domain.** Attach the Worker to the hostname Assay calls (for example `api.yourcompany.com`). The signature covers that hostname, so Assay must call the Worker's hostname, not the origin's.
-4. **Make your origin reachable only from the Worker.** Otherwise anyone can skip the check by calling the origin directly. Two simple ways:
+3. **Set `ASSAY_PROVIDER_ID`.** Set it to your Assay provider id, shown in the portal. This is required: while it is missing or empty, the Worker answers every request with `500` (`{"error":"assay_verify_misconfigured",...}`) and never calls your origin. If one origin serves several of your providers, list their ids separated by commas. Requests that Assay signed for any other provider are refused with `WRONG_PROVIDER`, because Assay signs requests for all providers with the same keys (see [why](overview.md#why-the-audience-check-exists)).
+4. **Add a route or custom domain.** Attach the Worker to the hostname Assay calls (for example `api.yourcompany.com`). The signature covers that hostname, so Assay must call the Worker's hostname, not the origin's.
+5. **Make your origin reachable only from the Worker.** Otherwise anyone can skip the check by calling the origin directly. Two simple ways:
    - **Secret header.** Run `npx wrangler secret put ORIGIN_SECRET`. The Worker then adds `x-assay-origin-secret: <value>` to every forwarded request. Make your origin (or its firewall) reject requests without it.
    - **Cloudflare Tunnel.** Expose the origin only through a tunnel and do not open its public port.
-5. **Test it.** Run the binding tester in the Assay console. You should see no "Signature not enforced" warning.
+6. **Test it.** Run the binding tester in the Assay console. You should see no "Signature not enforced" warning.
 
 ## What the Worker does
 
 - Valid request: forwarded with the same method and body to `ORIGIN_URL` + path + query. The headers `signature`, `signature-input` and `content-digest` are removed (and `host`). `x-assay-call-id` is kept.
+- `ASSAY_PROVIDER_ID` missing, empty or invalid: `500` with `{"error":"assay_verify_misconfigured","message":"..."}`. The origin is never called.
+- Request signed for another provider: `401` with reason `WRONG_PROVIDER`. The origin is never called.
 - Invalid request: `401` with `{"error":"invalid_assay_signature","reason":"<CODE>"}`. The origin is never called.
 - Body larger than 5 MiB: `413` before any check.
 - Redirects from your origin are returned to the caller as they are. The Worker never follows them.

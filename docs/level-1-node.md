@@ -11,6 +11,10 @@ Node 20 or newer. Rejected requests get `401`, `content-type: application/json` 
 `{"error":"invalid_assay_signature","reason":"<CODE>"}`. Accepted requests reach your handler
 unchanged; the raw body stays available.
 
+Every adapter and function needs your Assay provider id, shown in the portal. Assay signs requests for
+all providers with the same keys, so the id is what makes sure a request was meant for you; without it
+the adapter throws at setup.
+
 ## Express
 
 Mount it before any body parser (it needs the raw bytes). After a successful verification it sets
@@ -20,7 +24,7 @@ the raw `Buffer`) and marks the body as parsed, so a later `express.json()` is a
 ```ts
 import { assayVerify } from "@goassay-ai/provider-verify/express";
 
-app.use(assayVerify());
+app.use(assayVerify({ provider: "your-provider-id" }));
 app.use(express.json()); // optional: no-op, the body is already parsed
 ```
 
@@ -32,7 +36,7 @@ instead of guessing.
 ```ts
 import { assayVerifyPlugin } from "@goassay-ai/provider-verify/fastify";
 
-await app.register(assayVerifyPlugin);
+await app.register(assayVerifyPlugin, { provider: "your-provider-id" });
 ```
 
 The plugin is not encapsulated, so it covers all routes. It captures the raw body in a `preParsing`
@@ -43,7 +47,7 @@ hook and sets `request.rawBody`.
 ```ts
 import { assayVerify } from "@goassay-ai/provider-verify/hono";
 
-app.use("*", assayVerify());
+app.use("*", assayVerify({ provider: "your-provider-id" }));
 ```
 
 ## Next.js route handlers
@@ -51,18 +55,25 @@ app.use("*", assayVerify());
 ```ts
 import { withAssayVerify } from "@goassay-ai/provider-verify/next";
 
-export const POST = withAssayVerify(async (req) => Response.json(await req.json()));
+const assay = { provider: "your-provider-id" };
+
+export const POST = withAssayVerify(async (req) => Response.json(await req.json()), assay);
 
 // Dynamic routes: the route context (for example { params }) is passed through unchanged.
 export const GET = withAssayVerify(async (req, { params }: { params: Promise<{ id: string }> }) =>
   Response.json({ id: (await params).id }),
+  assay,
 );
 ```
 
 ## Options
 
+`provider` is required: your Assay provider id, shown in the portal (or an array of ids). Requests
+Assay signed for any other provider are rejected with `WRONG_PROVIDER`. Without it, the adapter throws
+at setup. See [why](overview.md#why-the-audience-check-exists).
+
 `assayVerify(options)` / `withAssayVerify(handler, options)` take the same `VerifyOptions` as
-`verifyAssayRequest`: `environment: "testnet"` (or `jwksUrl`), `authority`, `replayStore`,
+`verifyAssayRequest`: `provider` (required), `environment: "testnet"` (or `jwksUrl`), `authority`, `replayStore`,
 `clockSkewSeconds`, and `maxBodyBytes` (default 5 MiB; the body is buffered before authentication, larger
 bodies get `413 {"error":"payload_too_large"}` without verifying). The JWKS cache (1 hour) is shared
 process-wide by every verifier that uses the same key set URL. Each adapter (and each `createVerifier()`)
@@ -81,7 +92,7 @@ import { redisReplayStore } from "@goassay-ai/provider-verify/redis";
 const redis = createClient({ url: process.env.REDIS_URL });
 await redis.connect();
 
-app.use(assayVerify({ replayStore: redisReplayStore(redis) })); // key prefix "assay:nonce:"
+app.use(assayVerify({ provider: "your-provider-id", replayStore: redisReplayStore(redis) })); // key prefix "assay:nonce:"
 ```
 
 `redisReplayStore(client, prefix?)` uses `SET key 1 NX EX <ttl>` and works with node-redis v4+ and
@@ -94,7 +105,7 @@ header. If a proxy or load balancer rewrites `Host` (or your framework sees an i
 public host explicitly:
 
 ```ts
-app.use(assayVerify({ authority: "api.example.com" })); // include :port if not the scheme default
+app.use(assayVerify({ provider: "your-provider-id", authority: "api.example.com" })); // include :port if not the scheme default
 ```
 
 ## Testing locally with the vectors
@@ -106,6 +117,7 @@ the vector's `created` time so nothing is fetched and nothing expires:
 const v1 = JSON.parse(fs.readFileSync("test-vectors/v1.json", "utf8"));
 const c = v1.cases[0];
 app.use(assayVerify({
+  provider: c.params.audience,
   jwks: { keys: [v1.publicKeyJwk] },
   now: () => c.params.created,
   authority: new URL(c.request.url).host.toLowerCase(),
@@ -114,4 +126,6 @@ app.use(assayVerify({
 ```
 
 Changing one byte of the body returns `DIGEST_MISMATCH`. Replaying the same request returns `REPLAYED`.
+Configuring another provider id returns `WRONG_PROVIDER`. A successful `verifyAssayRequest` /
+`createVerifier()` result carries `keyId`, `callId` and `providerId` (the matched id).
 See `node/test/adapters.test.ts` for working examples.
