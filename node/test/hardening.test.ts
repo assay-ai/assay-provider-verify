@@ -87,3 +87,14 @@ describe("H3 expires < created", () => {
     expect(res).toEqual({ ok: false, reason: "EXPIRED" });
   });
 });
+
+describe("clockSkewSeconds is validated at config time", () => {
+  const jwks = { keys: [v1.publicKeyJwk] };
+  it.each([Number.NaN, -1, Infinity, 301, "60" as unknown as number])("rejects %s", (bad) => {
+    expect(() => createVerifier({ provider, jwks, clockSkewSeconds: bad })).toThrow(TypeError);
+    expect(() => verifyAssayRequest(inputOf(c1), { provider, jwks, clockSkewSeconds: bad })).toThrow(TypeError);
+  });
+  it.each([0, 30, 300])("accepts %s", (ok) => {
+    expect(() => createVerifier({ provider, jwks, clockSkewSeconds: ok })).not.toThrow();
+  });
+});

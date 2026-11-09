@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import math
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -125,6 +126,20 @@ def _provider_set(provider: object) -> FrozenSet[str]:
     return frozenset(ids)
 
 
+_MAX_CLOCK_SKEW_SECONDS = 300
+
+
+def _clock_skew(value: object) -> float:
+    """A NaN or negative skew would silently turn off the expiry check and replay
+    protection, so anything that is not a finite number in [0, 300] raises."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= _MAX_CLOCK_SKEW_SECONDS:
+        raise ValueError(
+            "goassay_provider_verify: clock_skew must be a finite number between 0 and %d, got %r"
+            % (_MAX_CLOCK_SKEW_SECONDS, value)
+        )
+    return value
+
+
 def _decode_b64(b64: str) -> bytes:
     b64 += "=" * (-len(b64) % 4)
     return base64.b64decode(b64, validate=True)
@@ -146,10 +161,11 @@ class Verifier:
         """``provider`` is REQUIRED: your Assay provider id (shown in the portal), or a
         list of them. Only requests signed for one of these providers (the ``aud``
         signature parameter) are accepted; others get WRONG_PROVIDER. Raises
-        TypeError when it is missing and ValueError when it is empty or invalid."""
+        TypeError when it is missing and ValueError when it is empty or invalid.
+        ``clock_skew`` must be a finite number of seconds in [0, 300] (ValueError)."""
         self._providers = _provider_set(provider)
         self._authority = authority
-        self._skew = clock_skew
+        self._skew = _clock_skew(clock_skew)
         self._now = now or _system_now
         self._replay = replay_store if replay_store is not None else _DEFAULT_REPLAY
         if jwks is not None:

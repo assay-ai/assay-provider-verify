@@ -49,7 +49,7 @@ Pass options as keyword arguments to either middleware, or to `Verifier` directl
 | `jwks_url` | per environment | Override the key set URL |
 | `authority` | `Host` header | Public host (`:port` if not the scheme default) when a proxy rewrites `Host` |
 | `replay_store` | in-memory, process-wide | See Redis below |
-| `clock_skew` | `60` | Seconds of tolerance around `created`/`expires` |
+| `clock_skew` | `60` | Seconds of tolerance around `created`/`expires`; a finite number from 0 to 300, otherwise `ValueError` |
 | `now` | system clock | Callable returning unix seconds (tests) |
 | `jwks` | none | Static key set (`{"keys": [...]}`); disables fetching |
 | `max_body_bytes` | `5242880` | Bodies are buffered before authentication; larger ones get `413 {"error":"payload_too_large"}` without verifying |

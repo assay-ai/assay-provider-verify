@@ -12,12 +12,38 @@ export interface JwksSource {
 }
 
 const FETCH_TIMEOUT_MS = 5000;
+/** Same cap as the Python and Go packages: a key set is a few hundred bytes. */
+const MAX_JWKS_BYTES = 1024 * 1024;
 const FAILURE_BACKOFF_SECONDS = 5;
 
 interface Jwk { kty?: string; crv?: string; x?: string; kid?: string }
 
 export function resolveJwksUrl(src: Pick<JwksSource, "jwksUrl" | "environment">): string {
   return src.jwksUrl ?? (src.environment === "testnet" ? JWKS_URL_TESTNET : JWKS_URL_PRODUCTION);
+}
+
+/** Reads a response body as UTF-8 text, failing once it passes `max` bytes. */
+async function readCapped(res: Response, max: number): Promise<string> {
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > max) throw new Error("jwks too large");
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => {});
+      throw new Error("jwks too large");
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.byteLength; }
+  return new TextDecoder().decode(out);
 }
 
 /** Caches imported Ed25519 public keys by kid. Clock (unix seconds) is passed per call. */
@@ -70,7 +96,7 @@ export class JwksCache {
           signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         });
         if (!res.ok) throw new Error("jwks http " + res.status);
-        const body = (await res.json()) as { keys?: unknown };
+        const body = JSON.parse(await readCapped(res, MAX_JWKS_BYTES)) as { keys?: unknown };
         if (!body || !Array.isArray(body.keys)) throw new Error("jwks shape");
         await this.load(body.keys);
       })();

@@ -283,3 +283,14 @@ def test_asgi_slow_jwks_fetch_does_not_block_event_loop(monkeypatch):
     asyncio.run(main())
     assert seen["unblocked"] is True
     assert sent[0]["status"] == 200
+
+
+@pytest.mark.parametrize("bad", [float("nan"), -1, float("inf"), 301, "60", None, True])
+def test_clock_skew_rejected_at_config_time(bad):
+    with pytest.raises(ValueError):
+        Verifier(provider=PROVIDER, jwks={"keys": [JWK]}, clock_skew=bad)
+
+
+@pytest.mark.parametrize("ok", [0, 30, 60.5, 300])
+def test_clock_skew_accepted(ok):
+    Verifier(provider=PROVIDER, jwks={"keys": [JWK]}, clock_skew=ok)
