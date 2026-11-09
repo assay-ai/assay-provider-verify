@@ -84,3 +84,17 @@ describe("JWKS cache", () => {
     expect(f.mock.calls[0]![0]).toBe("https://keys.example.test/jwks.json");
   });
 });
+
+describe("JWKS response size cap", () => {
+  it("rejects a key set larger than 1 MiB (UNKNOWN_KEY)", async () => {
+    const pad = "x".repeat(1024 * 1024 + 10);
+    const f = vi.fn(async () => new Response(JSON.stringify({ keys: [v1.publicKeyJwk], pad }), { status: 200 }));
+    const verify = createVerifier({ provider, fetch: f as any, jwksUrl: "https://big.example.test/jwks.json", now: () => c1.params.created });
+    expect(await verify(inputOf(c1))).toEqual({ ok: false, reason: "UNKNOWN_KEY" });
+  });
+  it("rejects early on a large Content-Length", async () => {
+    const f = vi.fn(async () => new Response(JSON.stringify({ keys: [v1.publicKeyJwk] }), { status: 200, headers: { "content-length": String(2 * 1024 * 1024) } }));
+    const verify = createVerifier({ provider, fetch: f as any, jwksUrl: "https://big2.example.test/jwks.json", now: () => c1.params.created });
+    expect(await verify(inputOf(c1))).toEqual({ ok: false, reason: "UNKNOWN_KEY" });
+  });
+});

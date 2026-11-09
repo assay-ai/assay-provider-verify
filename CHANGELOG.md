@@ -2,6 +2,12 @@
 
 All packages in this repository (npm `@goassay-ai/provider-verify`, PyPI `goassay-provider-verify`, the Go module and the Cloudflare Worker) share these notes.
 
+## Unreleased
+
+- Node and Python: the clock skew option (`clockSkewSeconds`, `clock_skew`) must be a finite number from 0 to 300. A NaN, negative, infinite or larger value now throws at setup (`TypeError` in Node, `ValueError` in Python). Before, a NaN skew silently turned off the expiry check and replay protection.
+- Node: the JWKS response is capped at 1 MiB, like Python and Go.
+- Release workflow: the npm job runs in a protected `npm` environment; the PyPI dist is built from hash-pinned tools in a job without `id-token`.
+
 ## 0.2.0
 
 ### Breaking: the provider id is required

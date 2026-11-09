@@ -41,6 +41,9 @@ export type VerifyResult =
 
 const BASE_COMPONENTS = ["@method", "@authority", "@path", "@query"];
 const MAX_VALIDITY_SECONDS = 300;
+const DEFAULT_CLOCK_SKEW_SECONDS = 60;
+/** Upper bound for `clockSkewSeconds`: the longest a signature may be valid. */
+const MAX_CLOCK_SKEW_SECONDS = 300;
 const PROVIDER_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const enc = new TextEncoder();
 
@@ -189,7 +192,7 @@ async function verifyOnce(
   }
 
   // 4. Time window.
-  const skew = options.clockSkewSeconds ?? 60;
+  const skew = clockSkew(options.clockSkewSeconds);
   const t = now();
   if (expires < created || expires - created > MAX_VALIDITY_SECONDS || t < created - skew || t > expires + skew) {
     return reject("EXPIRED");
@@ -254,8 +257,24 @@ function providerSet(provider: unknown): ReadonlySet<string> {
   return new Set(list as string[]);
 }
 
+/**
+ * Validates `clockSkewSeconds`. A NaN or negative skew would silently turn off
+ * the expiry check and replay protection, so anything that is not a finite
+ * number in [0, 300] throws a TypeError at configuration time.
+ */
+function clockSkew(value: unknown): number {
+  if (value === undefined) return DEFAULT_CLOCK_SKEW_SECONDS;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > MAX_CLOCK_SKEW_SECONDS) {
+    throw new TypeError(
+      `assay-provider-verify: \`clockSkewSeconds\` must be a finite number between 0 and ${MAX_CLOCK_SKEW_SECONDS}, got ${String(value)}`,
+    );
+  }
+  return value;
+}
+
 function build(options: VerifyOptions, cache: () => JwksCache, replay: ReplayStore): Verifier {
   const providers = providerSet((options as Partial<VerifyOptions> | undefined)?.provider);
+  clockSkew((options as Partial<VerifyOptions> | undefined)?.clockSkewSeconds);
   const jwks = cache();
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   return (input) => verifyOnce(input, options, providers, jwks, replay, now);

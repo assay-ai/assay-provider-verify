@@ -74,7 +74,7 @@ at setup. See [why](overview.md#why-the-audience-check-exists).
 
 `assayVerify(options)` / `withAssayVerify(handler, options)` take the same `VerifyOptions` as
 `verifyAssayRequest`: `provider` (required), `environment: "testnet"` (or `jwksUrl`), `authority`, `replayStore`,
-`clockSkewSeconds`, and `maxBodyBytes` (default 5 MiB; the body is buffered before authentication, larger
+`clockSkewSeconds` (0 to 300, default 60; anything else throws at setup), and `maxBodyBytes` (default 5 MiB; the body is buffered before authentication, larger
 bodies get `413 {"error":"payload_too_large"}` without verifying). The JWKS cache (1 hour) is shared
 process-wide by every verifier that uses the same key set URL. Each adapter (and each `createVerifier()`)
 creates one verifier at setup with its own in-memory replay store unless you pass `replayStore`, so mount
